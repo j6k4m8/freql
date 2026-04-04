@@ -1,0 +1,12 @@
+"""Pure collection helpers."""
+
+fn all_same[T](items: T[]) -> (result: Bool)
+where T: Equatable {
+    let mut same: Bool = true
+    for item in items {
+        if item != items[0] {
+            same = false
+        }
+    }
+    result = same
+}

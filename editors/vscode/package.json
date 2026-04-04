@@ -1,0 +1,113 @@
+{
+  "name": "freql-language-support",
+  "displayName": "freql Language Support",
+  "description": "Language support for freql process-flow models: highlighting, snippets, and compiler-backed editing.",
+  "version": "0.1.5",
+  "publisher": "freql",
+  "license": "MIT",
+  "engines": {
+    "vscode": ">=1.91.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Snippets",
+    "Linters"
+  ],
+  "keywords": [
+    "freql",
+    "process flow",
+    "units",
+    "formal methods",
+    "dsl"
+  ],
+  "activationEvents": [
+    "onLanguage:freql",
+    "onCommand:freql.checkCurrentFile",
+    "onCommand:freql.restartLanguageServer"
+  ],
+  "main": "./extension.js",
+  "scripts": {
+    "test": "node test/validate.js && node test/lsp-contract.js && node test/editing-client.js",
+    "test:server": "node test/server-launch.js",
+    "package": "npx @vscode/vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^3.6.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "freql",
+        "aliases": [
+          "freql",
+          "freql Process-Flow Language"
+        ],
+        "extensions": [
+          ".req"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "freql",
+        "scopeName": "source.freql",
+        "path": "./syntaxes/freql.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "freql",
+        "path": "./snippets/freql.json"
+      }
+    ],
+    "commands": [
+      {
+        "command": "freql.checkCurrentFile",
+        "title": "freql: Check Current File",
+        "category": "freql"
+      },
+      {
+        "command": "freql.explainConstraint",
+        "title": "freql: Explain Constraint at Cursor",
+        "category": "freql"
+      },
+      {
+        "command": "freql.restartLanguageServer",
+        "title": "freql: Restart Language Server",
+        "category": "freql"
+      }
+    ],
+    "configuration": {
+      "title": "freql",
+      "properties": {
+        "freql.entry": {
+          "type": "string",
+          "default": "",
+          "scope": "window",
+          "description": "Entry .req model used to analyze shared modules. An absolute path or a path relative to the workspace folder; empty checks each opened file as its own entry."
+        },
+        "freql.server.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "description": "Path to a freql executable that supports `freql lsp`. When empty, the extension uses target/debug/freql in the active workspace when present, then freql from PATH. The same executable is used by the manual check command."
+        },
+        "freql.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "scope": "window",
+          "description": "Trace communication between VS Code and the freql language server."
+        }
+      }
+    }
+  }
+}

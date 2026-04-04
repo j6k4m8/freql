@@ -1,0 +1,27 @@
+unit Speed = Length / Time
+unit Centimeter = Meter / 100
+unit Minute = Second * 60
+unit Hour = Minute * 60
+unit Liter = Meter^3 / 1000
+unit Gallon = Liter * 3.785411784
+unit Watt = Kilogram * Meter^2 / Second^3
+unit Mile = Meter * 1609.344
+unit Energy = Mass * Length^2 / Time^2
+unit Joule = Energy
+
+process Result {
+    config duration: Time = 13 Hour
+    config tank_volume: Volume = 12 Gallon
+    export rate: Mile / Hour aggregate sum
+    monitor rate
+
+    () => {
+        let gasoline_energy_density = 1.5e8 Joule / Gallon
+        let car_mpg = 30 Mile / Gallon
+
+        let energy_per_mile = gasoline_energy_density / car_mpg
+        let engine_power = tank_volume * gasoline_energy_density / duration
+
+        rate = engine_power / energy_per_mile
+    }
+}

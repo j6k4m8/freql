@@ -1,0 +1,37 @@
+# Numeric refinements retain their base representation and add constraints.
+unit PositiveScalar = Scalar(x) {
+    requires x > 0
+}
+
+unit Fraction = PositiveScalar(x) {
+    requires x <= 1
+}
+
+unit PositiveLength = Length(x) {
+    requires x > 0 Meter
+}
+
+unit PositiveInteger = Integer(x) {
+    requires x > 0
+}
+
+fn remaining(total: PositiveLength, used: PositiveLength) -> (
+    length: PositiveLength
+) {
+    # Subtraction itself is ordinary length arithmetic. The result annotation
+    # requires the remainder to be positive.
+    length = total - used
+}
+
+process RefinementExample {
+    expose config total: PositiveLength = 10 Centimeter
+    expose config used: PositiveLength = 2 Centimeter
+    expose config utilization: Fraction = 0.5
+    expose config count: PositiveInteger = 3
+    monitor remaining_length: Length
+
+    () => {
+        let result = remaining(total, used)
+        remaining_length = result.length
+    }
+}

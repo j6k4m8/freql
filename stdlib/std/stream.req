@@ -1,0 +1,6 @@
+# Compiler-provided linear stream combinators.
+#
+# std.stream.zip(left, right) emits owned named pairs until either input closes;
+# a direct for loop may then continue consuming either input's remainder.
+# std.stream.zip_exact(left, right) consumes both complete streams and fails if
+# they do not close successfully with equal cardinality.

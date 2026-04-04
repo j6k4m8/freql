@@ -1,0 +1,27 @@
+import "model.req" (
+    Stage,
+    Workpiece,
+    MeasuredWorkpiece,
+    PositionStage,
+    MeasureWorkpiece
+)
+
+process MeasurementCell {
+    gets workpiece: Workpiece
+    uses stage: Stage
+    export measured: MeasuredWorkpiece
+
+    (target: Length, maximum_width: Length) => {
+        let positioner = PositionStage()
+        let position = positioner(target: target)
+
+        let measurer = MeasureWorkpiece()
+        let measurement = measurer(maximum_width: maximum_width)
+
+        stage -> position.stage
+        workpiece -> measurement.workpiece
+
+        position before measurement
+        measurement.measured -> measured
+    }
+}

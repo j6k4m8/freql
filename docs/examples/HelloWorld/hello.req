@@ -1,0 +1,13 @@
+artifact Sample {
+    mass: Mass
+}
+
+process VerifySample {
+    gets sample: Sample
+    export verified: Sample
+
+    () => {
+        requires sample.mass > 0 Kilogram
+        verified = sample
+    }
+}

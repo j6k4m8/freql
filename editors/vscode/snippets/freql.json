@@ -1,0 +1,222 @@
+{
+  "Artifact declaration": {
+    "prefix": "artifact",
+    "description": "Declare an identity-bearing physical artifact",
+    "body": [
+      "artifact ${1:ArtifactName} {",
+      "    ${2:field}: ${3:Length}",
+      "}"
+    ]
+  },
+  "Derived artifact field": {
+    "prefix": "derived",
+    "description": "Declare a read-only derived artifact field",
+    "body": [
+      "${1:value}: ${2:Scalar} {",
+      "    ${3:expression}",
+      "}"
+    ]
+  },
+  "Capacity resource declaration": {
+    "prefix": "resource",
+    "description": "Declare a reusable scheduling resource with scalar or dimensional capacity",
+    "body": [
+      "resource ${1:ResourceName} {",
+      "    capacity: ${2:1}",
+      "}"
+    ]
+  },
+  "Provision a resource pool": {
+    "prefix": "provision",
+    "description": "Fulfill a resource export by constructing one reusable pool",
+    "body": [
+      "export ${1:pool}: ${2:ResourceName}[${3:capacity}]",
+      "",
+      "() => {",
+      "    ${1:pool} = ${2:ResourceName}[${3:capacity}]",
+      "    ${0}",
+      "}"
+    ]
+  },
+  "Invocation-dependent resource claim": {
+    "prefix": "usesclaim",
+    "description": "Claim capacity derived from one process invocation",
+    "body": "uses ${1:bandwidth}: ${2:CompressionBandwidth}[${3:input_rate}]"
+  },
+  "Process declaration": {
+    "prefix": "process",
+    "description": "Declare a process with configuration, invocation, and effects",
+    "body": [
+      "process ${1:ProcessName} {",
+      "    gets ${2:input}: ${3:Artifact}",
+      "    export ${4:output}: ${5:Artifact}",
+      "",
+      "    (",
+      "        ${6:parameter}: ${7:Scalar}",
+      "    ) => {",
+      "        ${0}",
+      "    }",
+      "}"
+    ]
+  },
+  "Process contract": {
+    "prefix": "contract",
+    "description": "Declare a bodyless process contract",
+    "body": [
+      "process ${1:ContractName} {",
+      "    export ${2:result}: ${3:Scalar}",
+      "}"
+    ]
+  },
+  "Local binding": {
+    "prefix": "let",
+    "description": "Introduce an immutable local binding",
+    "body": "let ${1:name} = ${0:value}"
+  },
+  "Process configuration": {
+    "prefix": "config",
+    "description": "Declare stable process-instance configuration",
+    "body": "config ${1:name}: ${2:Scalar}${0}"
+  },
+  "Exposed configuration with default": {
+    "prefix": "expose",
+    "description": "Expose overridable process configuration to design tooling",
+    "body": "expose config ${1:name}: ${2:Scalar} = ${0:value}"
+  },
+  "Configure and invoke process": {
+    "prefix": "run",
+    "description": "Configure a process and create one lazy run node",
+    "body": [
+      "let ${1:configured} = ${2:ProcessName}(${3})",
+      "let ${4:run} = ${1:configured}(${0})"
+    ]
+  },
+  "Configure and invoke once": {
+    "prefix": "runonce",
+    "description": "Configure a process and create one lazy run without naming the configuration",
+    "body": "let ${1:run} = ${2:ProcessName}(${3})(${0})"
+  },
+  "Punned process argument": {
+    "prefix": "pun",
+    "description": "Forward a same-named process configuration or invocation value",
+    "body": "${0:name}"
+  },
+  "Aggregate metric export": {
+    "prefix": "aggregate",
+    "description": "Declare a numeric export with a composite rollup rule",
+    "body": "export ${1:metric}: ${2:Scalar} aggregate ${3|sum,makespan,max,min,explicit|}"
+  },
+  "Monitor aggregate metric": {
+    "prefix": "monitor",
+    "description": "Require aggregate metric coverage across direct child runs",
+    "body": "monitor ${1:metric} as ${2:DisplayUnit}"
+  },
+  "Pure function": {
+    "prefix": "fn",
+    "description": "Declare a pure function with named results",
+    "body": [
+      "fn ${1:name}(${2:value}: ${3:Scalar}) -> (",
+      "    ${4:result}: ${5:Scalar}",
+      ") {",
+      "    ${4:result} = ${2:value}",
+      "}"
+    ]
+  },
+  "Generic pure function": {
+    "prefix": "fngeneric",
+    "description": "Declare a bounded generic pure function",
+    "body": [
+      "fn ${1:name}[T](items: T[]) -> (",
+      "    ${2:result}: ${3:Bool}",
+      ")",
+      "where T: ${4:Equatable} {",
+      "    ${2:result} = ${5:true}",
+      "}"
+    ]
+  },
+  "Trait declaration": {
+    "prefix": "trait",
+    "description": "Declare a trait of pure-function signatures",
+    "body": [
+      "trait ${1:TraitName}[T] {",
+      "    fn ${2:name}(value: T) -> (result: ${3:Bool})",
+      "}"
+    ]
+  },
+  "Trait implementation": {
+    "prefix": "impl",
+    "description": "Implement a trait for exact types",
+    "body": [
+      "impl ${1:TraitName}[${2:Type}] {",
+      "    fn ${3:name}(value: ${2:Type}) -> (result: ${4:Bool}) {",
+      "        result = ${5:true}",
+      "    }",
+      "}"
+    ]
+  },
+  "Unit declaration": {
+    "prefix": "unit",
+    "description": "Declare a structural dimension or scaled unit",
+    "body": "unit ${1:Millimeter} = ${2:Meter} / ${3:1000}"
+  },
+  "Base unit declaration": {
+    "prefix": "unitbase",
+    "description": "Declare a fresh nominal base dimension",
+    "body": "unit ${1:Information} = base"
+  },
+  "Relative import": {
+    "prefix": "importrel",
+    "body": "import \"${1:module.req}\" (${2:Name})"
+  },
+  "Standard-library import": {
+    "prefix": "importstd",
+    "body": "import std.${1:process} (${2:DurationAccounting})"
+  },
+  "Requirement": {
+    "prefix": "requires",
+    "body": "requires ${1:condition}"
+  },
+  "Stream loop": {
+    "prefix": "forstream",
+    "body": [
+      "for ${1:item} in ${2:stream} {",
+      "    ${0}",
+      "}"
+    ]
+  },
+  "Repeated physical workflow": {
+    "prefix": "repeat",
+    "description": "Repeat an effectful physical workflow sequentially",
+    "body": [
+      "repeat ${1:count} {",
+      "    ${0}",
+      "}"
+    ]
+  },
+  "Symbolic branch": {
+    "prefix": "ifelse",
+    "body": [
+      "if ${1:condition} {",
+      "    ${2}",
+      "} else {",
+      "    ${0}",
+      "}"
+    ]
+  },
+  "Yield stream item": {
+    "prefix": "yield",
+    "body": "yield ${1:stream} = ${2:value}"
+  },
+  "Wire ports": {
+    "prefix": "wire",
+    "body": "${1:source} -> ${2:target}"
+  },
+  "Causal ordering": {
+    "prefix": "before",
+    "body": "${1:first} before ${2:second}"
+  },
+  "Quantity literal": {
+    "prefix": "quantity",
+    "body": "${1:0} ${2|Meter,Second,Kilogram,Kelvin,Ampere,Mole,Candela,USD|}"
+  }
+}

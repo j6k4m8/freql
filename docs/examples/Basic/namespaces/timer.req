@@ -1,0 +1,17 @@
+import std.process(DurationAccounting)
+
+unit Tick = Second / 4
+
+fn elapsed(period: Time, jobs: Integer) -> (duration: Time) {
+    duration = period * jobs
+}
+
+process Timer: DurationAccounting {
+    config period: Time
+
+    (jobs: Integer) => {
+        requires period > 0 Second
+        requires jobs >= 0
+        duration = elapsed(period, jobs).duration
+    }
+}

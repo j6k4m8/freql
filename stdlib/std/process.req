@@ -1,0 +1,25 @@
+"""
+Standard accounting contracts. An assignment defines the process's direct
+contribution; composites derive the visible total from that value and their
+direct children. Missing leaf definitions remain open obligations.
+"""
+
+process CostAccounting {
+    export cost: USD aggregate sum
+}
+
+process DurationAccounting {
+    export duration: Time aggregate makespan
+}
+
+process ZeroCost: CostAccounting {
+    () => {
+        cost = 0 USD
+    }
+}
+
+process ZeroDuration: DurationAccounting {
+    () => {
+        duration = 0 Second
+    }
+}

@@ -1,0 +1,214 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "freql",
+  "scopeName": "source.freql",
+  "fileTypes": ["req"],
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#imports" },
+    { "include": "#declarations" },
+    { "include": "#members" },
+    { "include": "#numbers" },
+    { "include": "#keywords" },
+    { "include": "#builtins" },
+    { "include": "#operators" },
+    { "include": "#member-access" },
+    { "include": "#punctuation" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.freql",
+          "begin": "#",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.freql" } },
+          "end": "$",
+          "patterns": [
+            { "name": "keyword.other.documentation.freql", "match": "\\b(?:TODO|FIXME|NOTE|SAFETY):?\\b" }
+          ]
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "comment.block.documentation.freql",
+          "begin": "\"\"\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.freql" } },
+          "end": "\"\"\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.freql" } },
+          "patterns": [
+            { "name": "markup.inline.raw.freql", "begin": "`", "end": "`" },
+            { "name": "keyword.other.documentation.freql", "match": "\\b(?:TODO|FIXME|NOTE|SAFETY):?\\b" }
+          ]
+        },
+        {
+          "name": "string.quoted.double.freql",
+          "begin": "\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.freql" } },
+          "end": "\"",
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.freql" } },
+          "patterns": [
+            { "name": "constant.character.escape.freql", "match": "\\\\." }
+          ]
+        }
+      ]
+    },
+    "imports": {
+      "patterns": [
+        {
+          "match": "\\b(import)\\s+(?:(\"(?:[^\"\\\\]|\\\\.)*\")|([A-Za-z_][A-Za-z0-9_.]*))",
+          "captures": {
+            "1": { "name": "keyword.control.import.freql" },
+            "2": { "name": "string.quoted.double.freql" },
+            "3": { "name": "entity.name.namespace.freql" }
+          }
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "match": "\\b(artifact|resource|process|trait)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.freql" },
+            "2": { "name": "entity.name.type.freql" }
+          }
+        },
+        {
+          "match": "\\b(unit)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.freql" },
+            "2": { "name": "entity.name.type.unit.freql" }
+          }
+        },
+        {
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.function.freql" },
+            "2": { "name": "entity.name.function.freql" }
+          }
+        },
+        {
+          "match": "\\b(impl)\\s+([A-Za-z_][A-Za-z0-9_.]*)",
+          "captures": {
+            "1": { "name": "storage.type.freql" },
+            "2": { "name": "entity.name.type.trait.freql" }
+          }
+        }
+      ]
+    },
+    "members": {
+      "patterns": [
+        {
+          "match": "\\b(?:(expose)\\s+)?(config)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+          "captures": {
+            "1": { "name": "storage.modifier.freql" },
+            "2": { "name": "storage.modifier.freql" },
+            "3": { "name": "variable.other.member.freql" },
+            "4": { "name": "punctuation.separator.type.freql" }
+          }
+        },
+        {
+          "match": "\\b(gets|uses|export)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s*(:)",
+          "captures": {
+            "1": { "name": "storage.modifier.freql" },
+            "2": { "name": "variable.other.member.freql" },
+            "3": { "name": "punctuation.separator.type.freql" }
+          }
+        },
+        {
+          "match": "\\b(let)(?:\\s+(mut))?\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "storage.type.variable.freql" },
+            "2": { "name": "storage.modifier.freql" },
+            "3": { "name": "variable.other.definition.freql" }
+          }
+        },
+        {
+          "match": "\\b(for)\\s+([A-Za-z_][A-Za-z0-9_]*)\\s+(in)\\b",
+          "captures": {
+            "1": { "name": "keyword.control.loop.freql" },
+            "2": { "name": "variable.other.definition.freql" },
+            "3": { "name": "keyword.control.loop.freql" }
+          }
+        },
+        {
+          "match": "\\b([A-Za-z_][A-Za-z0-9_]*)\\s*(=>)",
+          "captures": {
+            "1": { "name": "variable.parameter.function.freql" },
+            "2": { "name": "storage.type.function.arrow.freql" }
+          }
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "match": "(?<![A-Za-z0-9_])([0-9]+(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)(?:\\s+([A-Za-z_][A-Za-z0-9_]*))?",
+          "captures": {
+            "1": { "name": "constant.numeric.freql" },
+            "2": { "name": "support.type.unit.freql" }
+          }
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        { "name": "keyword.control.conditional.freql", "match": "\\b(?:if|else)\\b" },
+        { "name": "keyword.control.loop.freql", "match": "\\b(?:for|in|repeat)\\b" },
+        { "name": "keyword.control.freql", "match": "\\b(?:requires|yield|before|where|monitor|aggregate|as|base)\\b" },
+        { "name": "storage.type.freql", "match": "\\b(?:artifact|resource|process|unit|fn|trait|impl)\\b" },
+        { "name": "storage.modifier.freql", "match": "\\b(?:config|expose|gets|uses|export|let|mut)\\b" },
+        { "name": "constant.language.boolean.freql", "match": "\\b(?:true|false)\\b" },
+        { "name": "support.function.aggregate.freql", "match": "\\b(?:sum|makespan|max|min|explicit)\\b" }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.type.freql",
+          "match": "\\b(?:Bool|Integer|Scalar|Stream|Array|Length|Area|Volume|Mass|Time|Current|Temperature|Amount|LuminousIntensity|Meter|Kilogram|Second|Ampere|Kelvin|Mole|Candela|USD)\\b"
+        },
+        {
+          "name": "support.type.trait.freql",
+          "match": "\\b(?:Equatable|Ordered|Add|Subtract|Multiply|Divide|Power|Iterable|Indexable|Copyable)\\b"
+        },
+        {
+          "name": "support.function.freql",
+          "match": "\\b(?:every|sum|ceil|floor|sqrt|length|append)\\b(?=\\s*\\()"
+        },
+        { "name": "support.constant.freql", "match": "\\bmath\\.pi\\b" }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        { "name": "keyword.operator.arrow.freql", "match": "->|=>" },
+        { "name": "keyword.operator.comparison.freql", "match": "==|!=|<=|>=|<|>" },
+        { "name": "keyword.operator.assignment.freql", "match": "=" },
+        { "name": "keyword.operator.arithmetic.freql", "match": "\\+|-|\\*|/|\\^" },
+        { "name": "keyword.operator.logical.freql", "match": "!" }
+      ]
+    },
+    "member-access": {
+      "patterns": [
+        {
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.accessor.freql" },
+            "2": { "name": "variable.other.member.freql" }
+          }
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.separator.freql", "match": "[,;:]" },
+        { "name": "punctuation.section.braces.freql", "match": "[{}]" },
+        { "name": "punctuation.section.brackets.freql", "match": "[\\[\\]]" },
+        { "name": "punctuation.section.parens.freql", "match": "[()]" }
+      ]
+    }
+  }
+}

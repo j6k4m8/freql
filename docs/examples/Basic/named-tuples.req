@@ -1,0 +1,36 @@
+# A tuple carries copyable measurements, settings, or results.
+artifact Sample {
+    thickness: Length
+}
+
+process Measure {
+    gets sample: Sample
+    export measurements: (thickness: Length, valid: Bool)
+
+    () => {
+        measurements = (thickness: sample.thickness, valid: true)
+    }
+}
+
+process Plan {
+    config settings: (scale: Scalar, margins: (left: Length, right: Length))
+    export summary: (thickness: Length, valid: Bool)
+
+    (measurements: (thickness: Length, valid: Bool)) => {
+        summary = (thickness: measurements.thickness * settings.scale, valid: measurements.valid)
+    }
+}
+
+process NamedTuplesExample {
+    export planned_thickness: Length
+
+    () => {
+        let sample = Sample(thickness: 2 Meter)
+        let measured = Measure()()
+        sample -> measured.sample
+        let settings = (scale: 2, margins: (left: 1 Millimeter, right: 2 Millimeter))
+        let first = Plan(settings: settings)(measurements: measured.measurements)
+        let second = Plan(settings: settings)(measurements: measured.measurements)
+        planned_thickness = first.summary.thickness + second.summary.thickness
+    }
+}

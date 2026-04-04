@@ -1,0 +1,12 @@
+# Rust build output
+target/
+
+# Editor and operating-system files
+.DS_Store
+*.swp
+
+# Local dependencies and generated packages
+node_modules/
+*.vsix
+.env
+.env.*

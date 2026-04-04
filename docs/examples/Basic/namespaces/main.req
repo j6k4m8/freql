@@ -1,0 +1,11 @@
+import "timer.req" as timer
+
+process NamespaceExample {
+    expose config period: Time = 2 timer.Tick
+    export duration: Time aggregate sum
+    monitor duration as Second
+
+    () => {
+        let clock = timer.Timer(period)(jobs: 8)
+    }
+}

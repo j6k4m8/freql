@@ -1,0 +1,44 @@
+import std.process (DurationAccounting)
+
+resource Slot {
+    capacity: 1
+}
+
+process Setup: DurationAccounting {
+    export slots: Slot[pool_size]
+    config pool_size: Integer
+    config setup_duration: Time
+
+    () => {
+        requires pool_size > 0
+        requires setup_duration > 0 Second
+        slots = Slot[pool_size]
+        duration = setup_duration
+    }
+}
+
+process Job: DurationAccounting {
+    uses slots: Slot[claims]
+
+    (claims: Integer, work_duration: Time) => {
+        requires claims > 0
+        requires work_duration > 0 Second
+        duration = work_duration
+    }
+}
+
+process PoolExample: DurationAccounting {
+    expose config pool_size: Integer = 3
+    expose config claims_per_job: Integer = 1
+    expose config setup_duration: Time = 7 Second
+    expose config job_duration: Time = 3 Second
+    monitor duration as Second
+
+    () => {
+        let pool = Setup(pool_size, setup_duration)()
+        let first = Job()(claims: claims_per_job, work_duration: job_duration)
+        let second = Job()(claims: claims_per_job, work_duration: job_duration)
+        pool.slots -> first.slots
+        pool.slots -> second.slots
+    }
+}

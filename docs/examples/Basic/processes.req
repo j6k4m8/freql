@@ -1,0 +1,30 @@
+import "artifacts.req" (Parcel, DispatchBatch)
+
+process VerifyParcels {
+    config max_parcel_mass: Mass
+    gets incoming: Stream[Parcel]
+    export verified: Stream[Parcel]
+
+    () => {
+        requires max_parcel_mass > 0 Kilogram
+        for parcel in incoming {
+            requires parcel.mass > 0 Kilogram
+            requires parcel.mass <= max_parcel_mass
+            requires parcel.destination != ""
+            yield verified = parcel
+        }
+    }
+}
+
+process DispatchParcels {
+    gets ready: Stream[Parcel]
+    export batch: DispatchBatch
+
+    () => {
+        let mut parcels: Parcel[] = []
+        for parcel in ready {
+            parcels.append(parcel)
+        }
+        batch = DispatchBatch(parcels: parcels)
+    }
+}

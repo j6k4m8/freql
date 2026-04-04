@@ -1,0 +1,58 @@
+import std.process (DurationAccounting)
+
+unit Millimeter = Meter / 1000
+unit Speed = Length / Time
+
+artifact Stage {
+    position: Length
+}
+
+artifact Workpiece {
+    width: Length
+    height: Length
+
+    area: Area {
+        width * height
+    }
+}
+
+artifact MeasuredWorkpiece {
+    source: Workpiece
+    measured_area: Area
+}
+
+fn within_limit(
+    value: Length,
+    limit: Length
+) -> (result: Bool) {
+    result = value <= limit
+}
+
+process PositionStage {
+    uses stage: Stage
+
+    (target: Length) => {
+        requires target >= 0 Millimeter
+        stage.position = target
+    }
+}
+
+process MeasureWorkpiece: DurationAccounting {
+    gets workpiece: Workpiece
+    export measured: MeasuredWorkpiece
+
+    (maximum_width: Length) => {
+        let check = within_limit(
+            value: workpiece.width,
+            limit: maximum_width
+        )
+
+        requires check.result
+
+        measured = MeasuredWorkpiece(
+            source: workpiece,
+            measured_area: workpiece.area
+        )
+        duration = 1 Second
+    }
+}

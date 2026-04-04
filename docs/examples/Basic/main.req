@@ -1,0 +1,16 @@
+import "artifacts.req" (Parcel, DispatchBatch)
+import "processes.req" (VerifyParcels, DispatchParcels)
+
+process VerifyAndDispatch {
+    expose config max_parcel_mass: Mass = 25 Kilogram
+    gets incoming: Stream[Parcel]
+    export batch: DispatchBatch
+
+    () => {
+        let verify = VerifyParcels(max_parcel_mass)()
+        let dispatch = DispatchParcels()()
+        incoming -> verify.incoming
+        verify.verified -> dispatch.ready
+        dispatch.batch -> batch
+    }
+}

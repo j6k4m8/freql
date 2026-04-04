@@ -1,0 +1,8 @@
+artifact Parcel {
+    mass: Mass
+    destination: String
+}
+
+artifact DispatchBatch {
+    parcels: Parcel[]
+}
