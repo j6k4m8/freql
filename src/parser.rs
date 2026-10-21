@@ -1268,6 +1268,69 @@ impl<'a> Parser<'a> {
         Some(left)
     }
 
+    /// Attach units to a literal or explicitly grouped coefficient. Grouped
+    /// expressions lower to multiplication, sharing ordinary dimensional checks.
+    fn parse_quantity_suffix(&mut self, coefficient: Expr) -> Option<Expr> {
+        if !self.at(SyntaxKind::Ident)
+            || self.current_is_expression_follow_keyword()
+            || self.at_statement_boundary()
+        {
+            return Some(coefficient);
+        }
+        let mut suffix = self.bump()?;
+        while self.eat(SyntaxKind::Dot).is_some() {
+            suffix.text.push('.');
+            suffix.text.push_str(&self.expect_ident()?.text);
+            suffix.span.end = self.previous_end();
+        }
+        let unit = if !self.at_statement_boundary() && self.eat(SyntaxKind::Caret).is_some() {
+            // A suffix power applies to the unit: `(2 + 1) Meter^2` is three
+            // square meters, while `((2 + 1) Meter)^2` is nine square meters.
+            let exponent = self.parse_expr(POWER_RIGHT_BINDING_POWER)?;
+            let end = exponent.span.end;
+            Expr {
+                kind: ExprKind::Binary {
+                    op: BinaryOp::Pow,
+                    left: Box::new(Expr::name(suffix.text, suffix.span.clone())),
+                    right: Box::new(exponent),
+                },
+                span: suffix.span.start..end,
+            }
+        } else {
+            // Preserve literal quantity nodes, including affine temperature
+            // semantics. Only computed coefficients need multiplication.
+            if let ExprKind::Number {
+                value,
+                suffix: None,
+            } = &coefficient.kind
+            {
+                return Some(Expr {
+                    kind: ExprKind::Number {
+                        value: value.clone(),
+                        suffix: Some(suffix.text),
+                    },
+                    span: coefficient.span.start..self.previous_end(),
+                });
+            }
+            Expr {
+                kind: ExprKind::Number {
+                    value: "1".into(),
+                    suffix: Some(suffix.text),
+                },
+                span: suffix.span,
+            }
+        };
+        let span = coefficient.span.start..unit.span.end;
+        Some(Expr {
+            kind: ExprKind::Binary {
+                op: BinaryOp::Mul,
+                left: Box::new(coefficient),
+                right: Box::new(unit),
+            },
+            span,
+        })
+    }
+
     fn parse_prefix(&mut self) -> Option<Expr> {
         if matches!(
             self.current_kind(),
@@ -1302,64 +1365,13 @@ impl<'a> Parser<'a> {
                     Some(Expr::name(token.text, token.span))
                 }
             }
-            SyntaxKind::Number => {
-                let suffix = if self.at(SyntaxKind::Ident)
-                    && !self.current_is_expression_follow_keyword()
-                    && !self.at_statement_boundary()
-                {
-                    let mut suffix = self.bump()?;
-                    while self.eat(SyntaxKind::Dot).is_some() {
-                        suffix.text.push('.');
-                        suffix.text.push_str(&self.expect_ident()?.text);
-                        suffix.span.end = self.previous_end();
-                    }
-                    Some(suffix)
-                } else {
-                    None
-                };
-
-                // A power written directly on a quantity suffix applies to
-                // the unit, not to the coefficient: `2 Meter^2` means two
-                // square meters. Parentheses retain ordinary arithmetic
-                // semantics, so `(2 Meter)^2` still means four square meters.
-                if let Some(suffix) = suffix.as_ref()
-                    && !self.at_statement_boundary()
-                    && self.eat(SyntaxKind::Caret).is_some()
-                {
-                    let exponent = self.parse_expr(POWER_RIGHT_BINDING_POWER)?;
-                    let end = exponent.span.end;
-                    let coefficient = Expr {
-                        kind: ExprKind::Number {
-                            value: token.text,
-                            suffix: None,
-                        },
-                        span: token.span.clone(),
-                    };
-                    let powered_unit = Expr {
-                        kind: ExprKind::Binary {
-                            op: BinaryOp::Pow,
-                            left: Box::new(Expr::name(suffix.text.clone(), suffix.span.clone())),
-                            right: Box::new(exponent),
-                        },
-                        span: suffix.span.start..end,
-                    };
-                    return Some(Expr {
-                        kind: ExprKind::Binary {
-                            op: BinaryOp::Mul,
-                            left: Box::new(coefficient),
-                            right: Box::new(powered_unit),
-                        },
-                        span: token.span.start..end,
-                    });
-                }
-                Some(Expr {
-                    kind: ExprKind::Number {
-                        value: token.text,
-                        suffix: suffix.map(|suffix| suffix.text),
-                    },
-                    span: token.span.start..self.previous_end(),
-                })
-            }
+            SyntaxKind::Number => self.parse_quantity_suffix(Expr {
+                kind: ExprKind::Number {
+                    value: token.text,
+                    suffix: None,
+                },
+                span: token.span,
+            }),
             SyntaxKind::String => Some(Expr {
                 kind: ExprKind::String {
                     value: unquote(&token.text),
@@ -1422,7 +1434,7 @@ impl<'a> Parser<'a> {
                 }
                 let value = self.parse_expr(0)?;
                 self.expect(SyntaxKind::RParen, "expected ')' after expression")?;
-                Some(Expr {
+                self.parse_quantity_suffix(Expr {
                     span: token.span.start..self.previous_end(),
                     ..value
                 })
@@ -2349,6 +2361,21 @@ mod tests {
             parse_expression("(2 Meter)^2").unwrap().display(),
             "((2 Meter) ^ 2)"
         );
+    }
+
+    #[test]
+    fn grouped_unit_suffixes_respect_statement_boundaries_and_follow_keywords() {
+        assert!(parse_expression("(1 + 2)\nMeter").is_err());
+        // An enclosing array keeps a newline open, like literal suffixes.
+        assert!(parse_expression("[(1 + 2)\nMeter]").is_ok());
+        let parsed = parse_display_expression("(350 / 24) Day as Hour").unwrap();
+        assert_eq!(parsed.display_unit.as_deref(), Some("Hour"));
+        let parsed = parse("process P { config n: Integer = (1 + 2) aggregate sum }");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let Item::Process(process) = &parsed.module.items[0] else {
+            panic!("expected process");
+        };
+        assert_eq!(process.members[0].aggregate, Some(AggregateRule::Sum));
     }
 
     #[test]

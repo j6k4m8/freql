@@ -484,6 +484,14 @@ mod tests {
     }
 
     #[test]
+    fn grouped_unit_suffixes_preserve_meaning_when_formatted() {
+        let source = "process P { config duration:Time=(350/24) Day\nconfig area:Area=(2+1) Meter^2\n}\n";
+        let formatted = format_source(source).unwrap();
+        assert!(formatted.contains("(350 / 24) Day"), "{formatted}");
+        assert_eq!(format_source(&formatted).unwrap(), formatted);
+    }
+
+    #[test]
     fn repository_models_preserve_ast_and_are_idempotent() {
         fn visit(path: &std::path::Path, checked: &mut usize) {
             for entry in std::fs::read_dir(path).unwrap() {
