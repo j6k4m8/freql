@@ -429,6 +429,39 @@ mod tests {
     }
 
     #[test]
+    fn parenthesized_coefficients_accept_unit_suffixes() {
+        let directory = tempdir().unwrap();
+        let mut calculator = CalculatorSession::new(directory.path());
+        for (source, expected) in [
+            ("(350 / 24) Day", "175/12 Day"),
+            ("(350 / 24) Day as Hour", "350 Hour"),
+            ("(2 + 1) Meter^2", "3 Meter^2"),
+            ("((2 + 1) Meter)^2", "9 Meter^2"),
+            ("(2 + 1) Meter^-1 as Meter^-1", "3 Meter^-1"),
+            ("(2 + 1) Meter / Second", "3 Meter / Second"),
+        ] {
+            assert_eq!(
+                calculator.execute(source).unwrap(),
+                Some(expected.into()),
+                "{source}"
+            );
+        }
+        fs::write(directory.path().join("units.req"), "unit Tick = Second * 2").unwrap();
+        calculator.execute("import \"units.req\" as units").unwrap();
+        assert_eq!(
+            calculator.execute("(2 + 1) units.Tick as Second").unwrap(),
+            Some("6 Second".into())
+        );
+        calculator.execute("let hours = 350 / 24").unwrap();
+        assert_eq!(
+            calculator.execute("(hours) Day as Hour").unwrap(),
+            Some("350 Hour".into())
+        );
+        assert!(calculator.execute("(1 + 1) MissingUnit").is_err());
+        assert!(calculator.execute("(true) Day").is_err());
+    }
+
+    #[test]
     fn imports_binds_and_converts_exact_quantities() {
         let directory = tempdir().unwrap();
         fs::write(

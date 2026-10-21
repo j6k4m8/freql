@@ -107,7 +107,7 @@ unit Petabyte = Byte * 1000000000000000
 
 Dimensional expressions work directly in annotations, such as `config speed: Length / Time`. A bare unit means exactly one unit. `as Unit` requests a compatible presentation unit without changing the value, type, or constraints.
 
-`130 Millimeter^2` means 130 square millimeters. `(130 Millimeter)^2` raises the whole quantity and means 16,900 square millimeters. Exponents are dimensionless numeric literals and may be signed. Parenthesize a numeric factor before attaching another unit: `(1.3^-1) * Byte`.
+`130 Millimeter^2` means 130 square millimeters. `(130 Millimeter)^2` raises the whole quantity and means 16,900 square millimeters. Exponents are dimensionless numeric literals and may be signed. A parenthesized coefficient can carry a unit suffix: `(350 / 24) Day` is equivalent to `(350 / 24) * Day` and converts to exactly `350 Hour`. Suffix powers still apply to the unit: `(2 + 1) Meter^2` means three square meters; `((2 + 1) Meter)^2` means nine square meters.
 
 `Integer` and `Scalar` are dimensionless. After `import math`, `math.pi` and unresolved roots can remain symbolic. `math.ceil` and `math.floor` round in the resolved unit's exact scale: `math.ceil(1.2 Millimeter)` is `2 Millimeter`, while `math.ceil(3.2)` is an integer. Equality is exact; tolerances and uncertainty are not implicit.
 
