@@ -148,6 +148,7 @@ impl CalculatorSession {
         })?;
         let expression = parsed.expression.display();
         let display_unit = parsed.display_unit;
+        let approximate = parsed.approximate;
         let probe = format!("let {RESULT_BINDING} = {expression}");
         let probe_source = build_source(
             &self.imports,
@@ -179,13 +180,13 @@ impl CalculatorSession {
         // trailing `as Unit` remains authoritative below.
         let result_type = neutral_type_display(&inferred, &probe_compilation)
             .unwrap_or_else(|| inferred.to_string());
-        let result_declaration = format!(
-            "monitor {RESULT_BINDING}: {result_type}{}",
-            display_unit
-                .as_deref()
-                .map(|unit| format!(" as {unit}"))
-                .unwrap_or_default()
-        );
+        let presentation = match (approximate, display_unit.as_deref()) {
+            (true, Some(unit)) => format!(" as ~{unit}"),
+            (true, None) => " as ~".to_owned(),
+            (false, Some(unit)) => format!(" as {unit}"),
+            (false, None) => String::new(),
+        };
+        let result_declaration = format!("monitor {RESULT_BINDING}: {result_type}{presentation}");
         let assignment = format!("{RESULT_BINDING} = {expression}");
         let result_source = build_source(
             &self.imports,
@@ -201,7 +202,7 @@ impl CalculatorSession {
             .monitored_metrics
             .iter()
             .find(|metric| metric.path == format!("{SESSION_PROCESS}.{RESULT_BINDING}"))
-            .map(|metric| Some(metric.value.clone()))
+            .map(|metric| Some(metric.display_value().to_owned()))
             .ok_or_else(|| CalculatorError::Invalid("expression did not produce a value".into()))
     }
 
@@ -402,7 +403,10 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{source}: {e}"));
             assert_eq!(result, Some(expected.into()), "{source}");
         }
-        let invalid = calculator.execute("(2 Meter * 3 Meter * 4 Meter) * (5 Kilogram / Meter^3) * (1.25^-1 Gram)").unwrap_err().to_string();
+        let invalid = calculator
+            .execute("(2 Meter * 3 Meter * 4 Meter) * (5 Kilogram / Meter^3) * (1.25^-1 Gram)")
+            .unwrap_err()
+            .to_string();
         assert!(
             invalid.contains("exponent must be dimensionless"),
             "{invalid}"
@@ -459,6 +463,79 @@ mod tests {
         );
         assert!(calculator.execute("(1 + 1) MissingUnit").is_err());
         assert!(calculator.execute("(true) Day").is_err());
+    }
+
+    #[test]
+    fn presentation_inside_result_parentheses() {
+        let directory = tempdir().unwrap();
+        let mut calculator = CalculatorSession::new(directory.path());
+        calculator.execute("let scale = 2").unwrap();
+        calculator.execute("unit Item = Count").unwrap();
+        for (source, expected) in [
+            ("(2 Hour / 3 as Minute)", "40 Minute"),
+            ("((2 Hour / 3 as ~Hour))", "≈0.666667 Hour"),
+            ("(2 Hour / 3 as ~)", "≈0.666667 Hour"),
+            (
+                "(12 Meter^3 / ((1*scale) Meter * (1*scale) Meter * (1*scale) Meter) as Item)",
+                "1.5 Item",
+            ),
+        ] {
+            assert_eq!(
+                calculator.execute(source).unwrap().as_deref(),
+                Some(expected),
+                "{source}"
+            );
+        }
+        assert!(calculator.execute("(2 Meter as Hour)").is_err());
+        assert_eq!(
+            calculator.execute("(3 + 1) Meter").unwrap().as_deref(),
+            Some("4 Meter")
+        );
+    }
+
+    #[test]
+    fn approximate_display_converts_units_without_changing_exact_values() {
+        let directory = tempdir().unwrap();
+        let mut calculator = CalculatorSession::new(directory.path());
+        for (source, expected) in [
+            ("(2 Hour / 4) as Minute", "30 Minute"),
+            ("(2 Hour / 4) as ~Minute", "30 Minute"),
+            ("(2 Hour / 3) as ~Hour", "≈0.666667 Hour"),
+            ("(2 Hour / 3) as ~", "≈0.666667 Hour"),
+            ("(2 / 3) as ~", "≈0.666667"),
+            ("(-2 Hour / 3) as ~Hour", "≈-0.666667 Hour"),
+            (
+                "(1 Meter / 3 Second) as ~(Meter / Second)",
+                "≈0.333333 Meter / Second",
+            ),
+        ] {
+            assert_eq!(
+                calculator.execute(source).unwrap().as_deref(),
+                Some(expected),
+                "{source}"
+            );
+        }
+        calculator.execute("let duration = 2 Hour / 3").unwrap();
+        assert_eq!(
+            calculator.execute("duration as ~Hour").unwrap().as_deref(),
+            Some("≈0.666667 Hour")
+        );
+        assert_eq!(
+            calculator.execute("duration as Hour").unwrap().as_deref(),
+            Some("2/3 Hour")
+        );
+        assert_eq!(
+            calculator.execute("duration as Minute").unwrap().as_deref(),
+            Some("40 Minute")
+        );
+        assert!(calculator.execute("(2 / 3) as ~Hour").is_err());
+        assert!(calculator.execute("1 Meter as ~Hour").is_err());
+        assert!(calculator.execute("true as ~").is_err());
+        calculator.execute("let rounded = 2 Hour / 3 as ~").unwrap();
+        assert_eq!(
+            calculator.execute("rounded * 3").unwrap().as_deref(),
+            Some("2 Hour")
+        );
     }
 
     #[test]

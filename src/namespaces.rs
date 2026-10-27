@@ -308,6 +308,12 @@ impl Scope {
             ExprKind::Unary { value, .. } | ExprKind::Member { value, .. } => {
                 self.expr(value, bound)
             }
+            ExprKind::Presentation { value, unit, .. } => {
+                self.expr(value, bound);
+                if let Some(unit) = unit {
+                    self.expr(unit, &HashSet::new());
+                }
+            }
             ExprKind::Binary { left, right, .. } => {
                 self.expr(left, bound);
                 self.expr(right, bound);

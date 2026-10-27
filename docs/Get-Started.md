@@ -404,6 +404,12 @@ A composite with no direct assignment contributes the reducer identity while sti
 
 `monitor metric` requests reporting and coverage: descendant runs must expose that metric through compatible composites. Missing coverage is an obligation rather than assumed zero. `monitor speed: Length / Time` is shorthand for an explicit export plus its monitor. Monitors are inherited, and a local clause can override the inherited presentation unit.
 
+`monitor duration as ~Hour` requests decimal presentation in hours;
+`monitor duration as ~` reuses the inferred display unit. Approximation settings
+inherit and propagate to descendant metrics like the display-unit choice. JSON
+reports retain the exact `value` and add `approximate_value` when a numeric value
+can be displayed; symbolic values and unresolved bounds remain symbolic.
+
 `monitor cost as MillionUSD` uses an exactly compatible unit for display only. An outer display choice propagates to matching descendant metrics. Reports show the total, any direct contribution, source, type, rollup rule, dependencies, and optional display unit.
 
 When scheduling remains unresolved, a makespan may retain a symbolic expression and conservative lower/upper bounds. These are possible-overlap bounds rather than predicted durations. The JSON `temporal_metrics` projection distinguishes currently defined work from successful completion; missing child durations prevent a completion bound from being asserted.
@@ -444,6 +450,48 @@ Start the persistent dimensional calculator with `freql calc`, or select an impo
 ⁂ rate * 5 Hour as Terabyte
 54 Terabyte
 ```
+
+Request decimal output with `as ~`, or select a compatible unit with
+`as ~Unit`:
+
+```text
+⁂ (2 Hour / 4) as Minute
+30 Minute
+⁂ (2 Hour / 4) as ~Minute
+30 Minute
+⁂ (2 Hour / 3) as ~Hour
+≈0.666667 Hour
+⁂ (2 Hour / 3) as ~
+≈0.666667 Hour
+```
+
+Decimal presentation rounds to at most six decimal places, with halfway values
+rounded away from zero. Trailing zeroes are omitted; `≈` appears only when the
+number was rounded. Exact calculations, bindings, constraints, and schedules
+remain unchanged. `as ~Hour` still requires a time-valued expression: it cannot
+attach hours to a dimensionless number. `as` is an expression operator in both
+ordinary `.req` code and the calculator; monitors accept the same display syntax.
+It binds more loosely than arithmetic and comparisons. Parenthesize a converted
+operand when continuing arithmetic, and group compound target units when useful:
+
+```req
+unit Item = Count
+process Estimate {
+    monitor storage: Information
+    () => {
+        let count = 2 / 3 as ~Item
+        storage = count * (2 Byte / Item)
+    }
+}
+```
+
+This reports `≈1.333333 Byte` while retaining the exact value `4/3 Byte`.
+Bindings, function arguments, return assignments, and nested operands all support
+`as`: for example, `(2 Hour as Minute) + 30 Second` and
+`(2 / 3 as ~) * 3`. The latter remains exactly `2`; approximation requests decimal
+presentation of derived results and never rounds an intermediate calculation.
+An explicit monitor unit or final `as Unit` chooses the final display unit;
+otherwise compatible unit choices compose through the expression.
 
 The session uses ordinary language parsing, typing, units, and exact presentation conversion. Quoted imports resolve from the calculator root. `:bindings`, `:clear`, `:help`, and `:quit` manage the session. Up/down browse history, Ctrl-R searches it, and Tab completes commands, bindings, declarations, units, and `.req` import paths. Interactive input supports syntax highlighting; piped input omits prompts and terminal formatting.
 

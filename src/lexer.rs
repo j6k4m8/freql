@@ -73,6 +73,8 @@ enum RawKind {
     Gt,
     #[token("!")]
     Bang,
+    #[token("~")]
+    Tilde,
 }
 
 fn lex_doc_string(lexer: &mut Lexer<'_, RawKind>) -> bool {
@@ -119,6 +121,7 @@ impl From<RawKind> for SyntaxKind {
             RawKind::Arrow => Self::Arrow,
             RawKind::FatArrow => Self::FatArrow,
             RawKind::Bang => Self::Bang,
+            RawKind::Tilde => Self::Tilde,
         }
     }
 }

@@ -118,6 +118,8 @@ pub struct ProcessModel {
     pub monitors: Vec<String>,
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
     pub monitor_display_units: IndexMap<String, String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub approximate_monitors: Vec<String>,
     pub parameters: IndexMap<String, Type>,
     /// Effective root configuration for this compilation, including overrides.
     #[serde(default, skip_serializing_if = "IndexMap::is_empty")]
@@ -348,7 +350,11 @@ impl Compilation {
                 .unwrap_or_default();
             output.push_str(&format!(
                 "  - {}: {} = {}{} ({})\n",
-                metric.path, metric.ty, metric.value, direct, metric.aggregate
+                metric.path,
+                metric.ty,
+                metric.display_value(),
+                direct,
+                metric.aggregate
             ));
         }
         output.push_str(&format!(
@@ -761,6 +767,12 @@ struct PureAssignments {
     maybe: BTreeSet<String>,
 }
 
+#[derive(Clone, Debug)]
+struct MonitorPresentation {
+    display_unit: Option<String>,
+    approximate: bool,
+}
+
 struct Analyzer {
     sources: SourceSet,
     override_inputs: Vec<ConfigOverride>,
@@ -777,7 +789,7 @@ struct Analyzer {
     /// Effective `monitor` clauses per process, unioned across the extends
     /// chain. `monitor` sits beside the inheritable member declarations, so it
     /// inherits like them; a local clause overrides an inherited one.
-    resolved_monitors: IndexMap<String, IndexMap<String, Option<String>>>,
+    resolved_monitors: IndexMap<String, IndexMap<String, MonitorPresentation>>,
     summaries: IndexMap<String, ProcessSummary>,
     /// Symbolic named outputs for nonrecursive pure functions. These templates
     /// let exact checking and reporting evaluate ordinary helper calls without
@@ -3034,8 +3046,18 @@ impl Analyzer {
                             monitors
                                 .iter()
                                 .filter_map(|(metric, unit)| {
-                                    unit.clone().map(|unit| (metric.clone(), unit))
+                                    unit.display_unit.clone().map(|unit| (metric.clone(), unit))
                                 })
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                    approximate_monitors: process_monitors
+                        .get(&name)
+                        .map(|monitors| {
+                            monitors
+                                .iter()
+                                .filter(|(_, presentation)| presentation.approximate)
+                                .map(|(metric, _)| metric.clone())
                                 .collect()
                         })
                         .unwrap_or_default(),
@@ -3754,6 +3776,20 @@ impl Analyzer {
         for monitor in &process.monitors {
             match result.get(&monitor.name) {
                 Some(member) if member.role == MemberRole::Export && member.aggregate.is_some() => {
+                    if monitor.approximate
+                        && member.ty.dimension().is_none()
+                        && member.ty != Type::Error
+                    {
+                        self.push_error(
+                            &item.file_key,
+                            monitor.span.clone(),
+                            "E0512",
+                            format!(
+                                "monitor {} has nonnumeric type {} and cannot use approximate display",
+                                monitor.name, member.ty
+                            ),
+                        );
+                    }
                     if let Some(display_unit) = &monitor.display_unit {
                         let resolved_unit =
                             monitor.display_unit_expression.as_ref().map_or_else(
@@ -3855,7 +3891,7 @@ impl Analyzer {
                 );
             }
         }
-        let mut monitors = IndexMap::<String, Option<String>>::new();
+        let mut monitors = IndexMap::<String, MonitorPresentation>::new();
         for parent in &process.parents {
             if let Some(parent_monitors) = self.resolved_monitors.get(parent) {
                 for (metric, display_unit) in parent_monitors {
@@ -3868,7 +3904,13 @@ impl Analyzer {
         // need no revalidation: a contract can only monitor its own aggregate
         // exports, and every implementation inherits those.
         for monitor in &process.monitors {
-            monitors.insert(monitor.name.clone(), monitor.display_unit.clone());
+            monitors.insert(
+                monitor.name.clone(),
+                MonitorPresentation {
+                    display_unit: monitor.display_unit.clone(),
+                    approximate: monitor.approximate,
+                },
+            );
         }
         stack.pop();
         self.resolved_monitors.insert(name.to_owned(), monitors);
@@ -6075,7 +6117,9 @@ impl Analyzer {
                 }
                 self.mark_consumed_run_exports(value, environment, summary);
             }
-            ExprKind::Index { value, .. } | ExprKind::Unary { value, .. } => {
+            ExprKind::Presentation { value, .. }
+            | ExprKind::Index { value, .. }
+            | ExprKind::Unary { value, .. } => {
                 self.mark_consumed_run_exports(value, environment, summary);
             }
             ExprKind::Binary { left, right, .. } => {
@@ -7722,7 +7766,7 @@ impl Analyzer {
         object_path: &str,
         substitutions: &IndexMap<String, Expr>,
         configured_bindings: &IndexMap<String, ConfiguredTemplate>,
-        inherited_monitors: &IndexMap<String, Option<String>>,
+        inherited_monitors: &IndexMap<String, MonitorPresentation>,
         instance_multiplicity: &Expr,
         stack: &mut Vec<String>,
     ) {
@@ -7755,7 +7799,8 @@ impl Analyzer {
         stack.push(process_name.to_owned());
         let run_export_replacements =
             self.instantiate_run_exports(&summary, configured_bindings, substitutions);
-        for (metric, display_unit) in &monitored {
+        for (metric, presentation) in &monitored {
+            let display_unit = &presentation.display_unit;
             let Some(value) = summary.export_values.get(metric) else {
                 continue;
             };
@@ -7838,6 +7883,10 @@ impl Analyzer {
                 self.report.monitored_metrics.push(MonitoredMetric {
                     path,
                     ty: member.ty.to_string(),
+                    approximate_value: (presentation.approximate
+                        || expression_requests_approximation(&value))
+                    .then(|| crate::presentation::approximate_value(&displayed_value))
+                    .flatten(),
                     value: displayed_value,
                     direct_value,
                     direct_expression,
@@ -11366,6 +11415,59 @@ impl Analyzer {
 
     fn infer_expr(&mut self, file_key: &str, expression: &Expr, environment: &TypeEnv) -> Type {
         match &expression.kind {
+            ExprKind::Presentation { value, unit, .. } => {
+                let ty = self.infer_expr(file_key, value, environment);
+                if ty == Type::Error {
+                    return ty;
+                }
+                let Some(dimension) = ty.dimension() else {
+                    self.push_error(
+                        file_key,
+                        expression.span.clone(),
+                        "E0512",
+                        format!("presentation requires a numeric value, found {ty}"),
+                    );
+                    return Type::Error;
+                };
+                let Some(unit_expression) = unit else {
+                    return ty;
+                };
+                let label = unit_expression.display();
+                let unit = match self.registry.resolve_display_unit(&label, unit_expression) {
+                    Ok(unit) => unit,
+                    Err(reason) => {
+                        self.push_error(
+                            file_key,
+                            expression.span.clone(),
+                            "E0511",
+                            format!("invalid display unit {label}: {reason}"),
+                        );
+                        return Type::Error;
+                    }
+                };
+                if dimension != unit.dimension {
+                    self.push_error(file_key, expression.span.clone(), "E0512",
+                        format!("value has dimension {dimension}, incompatible with display unit {label} ({})", unit.dimension));
+                    return Type::Error;
+                }
+                let absolute = matches!(ty, Type::Quantity { absolute: true, .. });
+                self.registry
+                    .units
+                    .entry(label.clone())
+                    .or_insert_with(|| unit.clone());
+                // A count remains an Integer/Scalar so it can still satisfy
+                // scalar parameters and annotations. The AST retains its label.
+                if dimension.is_scalar() {
+                    return ty;
+                }
+                Type::Quantity {
+                    dimension,
+                    display: label,
+                    scale: Some(unit.scale),
+                    explicit_presentation: true,
+                    absolute,
+                }
+            }
             ExprKind::Name { value } => {
                 if let Some(ty) = environment.values.get(value).cloned() {
                     if environment.ownership.get(value) == Some(&PlaceState::Moved) {
@@ -12537,7 +12639,16 @@ impl Analyzer {
                     );
                     return Type::Error;
                 };
-                let Some(exponent) = signed_scalar_literal(right_expression) else {
+                let exponent = signed_scalar_literal(right_expression).or_else(|| {
+                    if matches!(right_expression.kind, ExprKind::Presentation { .. }) {
+                        self.constant_quantity(right_expression)
+                            .filter(|(_, dimension)| dimension.is_scalar())
+                            .map(|(value, _)| value)
+                    } else {
+                        None
+                    }
+                });
+                let Some(exponent) = exponent else {
                     let message = if right.dimension().is_some_and(|d| !d.is_scalar()) {
                         format!(
                             "exponent must be dimensionless, found {right}; a unit after the exponent belongs to the exponent. Use `as Unit` to convert the result, or `* Unit` outside the power to multiply by a unit"
@@ -12711,6 +12822,15 @@ impl Analyzer {
         ty: &Type,
         display_unit: Option<&str>,
     ) -> String {
+        if display_unit.is_none()
+            && let ExprKind::Presentation {
+                value,
+                unit: Some(unit),
+                ..
+            } = &expression.kind
+        {
+            return self.metric_value_display(value, ty, Some(&unit.display()));
+        }
         let Some((value, dimension)) = self.constant_quantity(expression) else {
             if let ExprKind::Call { callee, arguments } = &expression.kind
                 && let Some(name) = callee.path()
@@ -12994,6 +13114,9 @@ impl Analyzer {
     /// 21 Celsius, not 294 Kelvin.
     fn rounding_unit(&self, expression: &Expr, dimension: &Dimension) -> Unit {
         let named = match &expression.kind {
+            ExprKind::Presentation {
+                unit: Some(unit), ..
+            } => self.registry.units.get(&unit.display()),
             ExprKind::Name { value } => self.registry.units.get(value),
             ExprKind::Number {
                 suffix: Some(suffix),
@@ -13048,6 +13171,7 @@ impl Analyzer {
 
     fn constant_quantity(&self, expression: &Expr) -> Option<(BigRational, Dimension)> {
         match &expression.kind {
+            ExprKind::Presentation { value, .. } => self.constant_quantity(value),
             ExprKind::Member { value, member } => {
                 let inlined = self.tuple_member_value(value, member, 0)?;
                 self.constant_quantity(&inlined)
@@ -13845,6 +13969,18 @@ fn run_inputs(summary: &ProcessSummary) -> HashMap<(String, String), Expr> {
 
 fn substitute_names(expression: &Expr, values: &IndexMap<String, Expr>) -> Expr {
     match &expression.kind {
+        ExprKind::Presentation {
+            value,
+            unit,
+            approximate,
+        } => Expr {
+            kind: ExprKind::Presentation {
+                value: Box::new(substitute_names(value, values)),
+                unit: unit.clone(),
+                approximate: *approximate,
+            },
+            span: expression.span.clone(),
+        },
         ExprKind::NamedTuple { fields } => Expr {
             kind: ExprKind::NamedTuple {
                 fields: fields
@@ -13958,6 +14094,18 @@ fn substitute_paths(expression: &Expr, replacements: &HashMap<String, Expr>) -> 
         return replacement.clone();
     }
     match &expression.kind {
+        ExprKind::Presentation {
+            value,
+            unit,
+            approximate,
+        } => Expr {
+            kind: ExprKind::Presentation {
+                value: Box::new(substitute_paths(value, replacements)),
+                unit: unit.clone(),
+                approximate: *approximate,
+            },
+            span: expression.span.clone(),
+        },
         ExprKind::NamedTuple { fields } => Expr {
             kind: ExprKind::NamedTuple {
                 fields: fields
@@ -14116,7 +14264,7 @@ fn collect_value_dependencies(
                 collect_value_dependencies(index, bound, dependencies);
             }
         }
-        ExprKind::Unary { value, .. } => {
+        ExprKind::Presentation { value, .. } | ExprKind::Unary { value, .. } => {
             collect_value_dependencies(value, bound, dependencies);
         }
         ExprKind::Binary { left, right, .. } => {
@@ -14175,7 +14323,9 @@ fn collect_free_names(expression: &Expr, bound: &BTreeSet<String>, names: &mut B
         {
             names.insert(value.clone());
         }
-        ExprKind::Unary { value, .. } | ExprKind::Member { value, .. } => {
+        ExprKind::Presentation { value, .. }
+        | ExprKind::Unary { value, .. }
+        | ExprKind::Member { value, .. } => {
             collect_free_names(value, bound, names);
         }
         ExprKind::Binary { left, right, .. } => {
@@ -14524,7 +14674,9 @@ fn schedule_expression_producers(
                 schedule_expression_producers(&field.value, run_instances, value_producers)
             })
             .collect(),
-        ExprKind::Unary { value, .. } | ExprKind::Member { value, .. } => {
+        ExprKind::Presentation { value, .. }
+        | ExprKind::Unary { value, .. }
+        | ExprKind::Member { value, .. } => {
             schedule_expression_producers(value, run_instances, value_producers)
         }
         ExprKind::Binary { left, right, .. } => {
@@ -15468,6 +15620,7 @@ fn negated_number_literal(expression: &Expr) -> Option<Expr> {
 
 fn numeric_constant(expression: &Expr) -> Option<BigRational> {
     match &expression.kind {
+        ExprKind::Presentation { value, .. } => numeric_constant(value),
         ExprKind::Number { value, .. } => parse_rational(value),
         ExprKind::Unary {
             op: UnaryOp::Neg,
@@ -15488,6 +15641,9 @@ fn numeric_constant(expression: &Expr) -> Option<BigRational> {
 /// multiplication and division compose scales algebraically.
 fn preferred_unit(expression: &Expr, registry: &TypeRegistry) -> Option<(BigRational, Dimension)> {
     match &expression.kind {
+        ExprKind::Presentation { value, unit, .. } => {
+            preferred_unit(unit.as_deref().unwrap_or(value), registry)
+        }
         ExprKind::Name { value } => registry
             .units
             .get(value)
@@ -15694,6 +15850,9 @@ fn collect_preferred_base_units(
         record_preferred_base_unit(name, registry, candidates, 0);
     };
     match &expression.kind {
+        ExprKind::Presentation { value, unit, .. } => {
+            collect_preferred_base_units(unit.as_deref().unwrap_or(value), registry, candidates)
+        }
         ExprKind::Name { value } => record(value, candidates),
         ExprKind::Number {
             suffix: Some(suffix),
@@ -15743,6 +15902,9 @@ fn preferred_unit_factors(
     registry: &TypeRegistry,
 ) -> Option<BTreeMap<String, i32>> {
     match &expression.kind {
+        ExprKind::Presentation { value, unit, .. } => {
+            preferred_unit_factors(unit.as_deref().unwrap_or(value), registry)
+        }
         ExprKind::Name { value } if registry.units.contains_key(value) => {
             Some(BTreeMap::from([(value.clone(), 1)]))
         }
@@ -15993,6 +16155,7 @@ fn format_truncated_rational(value: &BigRational, places: u32) -> String {
 /// difference of two points is a magnitude.
 fn expression_is_absolute(expression: &Expr, registry: &TypeRegistry) -> bool {
     match &expression.kind {
+        ExprKind::Presentation { value, .. } => expression_is_absolute(value, registry),
         ExprKind::Name { value } => registry.units.get(value).is_some_and(Unit::is_absolute),
         ExprKind::Number {
             suffix: Some(suffix),
@@ -16031,6 +16194,9 @@ fn quantity_suffixes_match(expression: &Expr, expected: &str) -> bool {
             suffix: Some(suffix),
             ..
         } => suffix == expected,
+        ExprKind::Presentation { value, unit, .. } => {
+            quantity_suffixes_match(unit.as_deref().unwrap_or(value), expected)
+        }
         ExprKind::Unary { value, .. } => quantity_suffixes_match(value, expected),
         ExprKind::Binary { left, right, .. } => {
             quantity_suffixes_match(left, expected) || quantity_suffixes_match(right, expected)
@@ -16078,6 +16244,9 @@ fn first_quantity_suffix<'a>(
             .is_some_and(|unit| &unit.dimension == expected) =>
         {
             Some(suffix)
+        }
+        ExprKind::Presentation { value, unit, .. } => {
+            first_quantity_suffix(unit.as_deref().unwrap_or(value), registry, expected)
         }
         ExprKind::Unary { value, .. } => first_quantity_suffix(value, registry, expected),
         ExprKind::Binary { left, right, .. } => first_quantity_suffix(left, registry, expected)
@@ -16371,6 +16540,20 @@ fn expression_can_have_effect(expression: &Expr) -> bool {
     found
 }
 
+fn expression_requests_approximation(expression: &Expr) -> bool {
+    let mut approximate = false;
+    visit_expr(expression, &mut |expression| {
+        approximate |= matches!(
+            expression.kind,
+            ExprKind::Presentation {
+                approximate: true,
+                ..
+            }
+        );
+    });
+    approximate
+}
+
 fn visit_expr(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
     visitor(expression);
     match &expression.kind {
@@ -16379,9 +16562,9 @@ fn visit_expr(expression: &Expr, visitor: &mut impl FnMut(&Expr)) {
                 visit_expr(&field.value, visitor);
             }
         }
-        ExprKind::Unary { value, .. } | ExprKind::Member { value, .. } => {
-            visit_expr(value, visitor)
-        }
+        ExprKind::Presentation { value, .. }
+        | ExprKind::Unary { value, .. }
+        | ExprKind::Member { value, .. } => visit_expr(value, visitor),
         ExprKind::Binary { left, right, .. } => {
             visit_expr(left, visitor);
             visit_expr(right, visitor);

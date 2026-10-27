@@ -317,7 +317,7 @@ fn space_before(tokens: &[&Token], index: usize) -> bool {
     if matches!(
         b.kind,
         K::Comma | K::Colon | K::Dot | K::RParen | K::RBracket | K::Caret
-    ) || matches!(a.kind, K::Dot | K::LParen | K::LBracket | K::Caret)
+    ) || matches!(a.kind, K::Dot | K::LParen | K::LBracket | K::Caret | K::Tilde)
         || unary(tokens, index - 1)
     {
         return false;

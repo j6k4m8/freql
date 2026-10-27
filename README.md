@@ -76,6 +76,13 @@ The calculator retains imports and immutable bindings and uses the model languag
 36000 Meter
 ```
 
+Use `as ~` for decimal presentation in the inferred unit, or `as ~Hour` to
+select a compatible unit. For example, `(2 Hour / 3) as ~Hour` displays
+`≈0.666667 Hour`, while plain `as Hour` retains `2/3 Hour`. Calculations remain
+exact; monitors support the same presentation syntax. `as` also works in normal
+code, including bindings and function arguments. Parenthesize a converted operand
+when continuing arithmetic: `(2 Hour as Minute) + 30 Second`.
+
 ## Development checks
 
 From the repository root:
