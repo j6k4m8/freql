@@ -36,6 +36,7 @@ pub enum SyntaxKind {
     Arrow,
     FatArrow,
     Bang,
+    Tilde,
     Error,
 }
 

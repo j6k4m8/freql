@@ -36,12 +36,14 @@ pub struct Parse {
 pub struct DisplayExpression {
     pub expression: Expr,
     pub display_unit: Option<String>,
+    pub approximate: bool,
 }
 
 #[derive(Clone, Debug)]
 struct ParsedDisplayUnit {
-    expression: Expr,
-    text: String,
+    expression: Option<Expr>,
+    text: Option<String>,
+    approximate: bool,
     span: Span,
 }
 
@@ -80,12 +82,32 @@ fn parse_display_expression_internal(
 ) -> Result<DisplayExpression, Vec<ParseError>> {
     let lexed = lex(source);
     let mut parser = Parser::new(source, lexed);
-    let expression = parser.parse_expr(0);
+    let mut expression = parser.parse_expr(0);
     if expression.is_none() && parser.errors.is_empty() {
         parser.error("expected expression", parser.current_span());
     }
     let display_unit = if allow_display_unit {
-        parser.parse_optional_display_unit().map(|unit| unit.text)
+        if let Some(Expr {
+            kind:
+                ExprKind::Presentation {
+                    value,
+                    unit,
+                    approximate,
+                },
+            ..
+        }) = &expression
+        {
+            let presentation = ParsedDisplayUnit {
+                text: unit.as_deref().map(compact_unit_expression),
+                expression: unit.as_deref().cloned(),
+                approximate: *approximate,
+                span: expression.as_ref().unwrap().span.clone(),
+            };
+            expression = Some(*value.clone());
+            Some(presentation)
+        } else {
+            None
+        }
     } else {
         None
     };
@@ -95,7 +117,8 @@ fn parse_display_expression_internal(
     if parser.errors.is_empty() {
         Ok(DisplayExpression {
             expression: expression.expect("successful expression parse"),
-            display_unit,
+            approximate: display_unit.as_ref().is_some_and(|unit| unit.approximate),
+            display_unit: display_unit.and_then(|unit| unit.text),
         })
     } else {
         Err(parser.errors)
@@ -502,8 +525,9 @@ impl<'a> Parser<'a> {
                 }
                 monitors.push(Monitor {
                     name: name.text,
-                    display_unit: display_unit.as_ref().map(|unit| unit.text.clone()),
-                    display_unit_expression: display_unit.map(|unit| unit.expression),
+                    display_unit: display_unit.as_ref().and_then(|unit| unit.text.clone()),
+                    approximate: display_unit.as_ref().is_some_and(|unit| unit.approximate),
+                    display_unit_expression: display_unit.and_then(|unit| unit.expression),
                     span: token.span.start..end,
                 });
                 self.eat(SyntaxKind::Semicolon);
@@ -1246,6 +1270,21 @@ impl<'a> Parser<'a> {
                 };
                 continue;
             }
+            // Presentation binds more loosely than arithmetic and comparisons.
+            // Parenthesize it when its result is an operand of a larger expression.
+            if min_binding_power == 0 && self.at_kw("as") {
+                let presentation = self.parse_optional_display_unit()?;
+                let span = left.span.start..presentation.span.end;
+                left = Expr {
+                    kind: ExprKind::Presentation {
+                        value: Box::new(left),
+                        unit: presentation.expression.map(Box::new),
+                        approximate: presentation.approximate,
+                    },
+                    span,
+                };
+                continue;
+            }
             let Some((left_power, right_power, op)) = self.infix_binding_power() else {
                 break;
             };
@@ -1522,16 +1561,45 @@ impl<'a> Parser<'a> {
         if self.at_statement_boundary() {
             return None;
         }
-        self.eat_kw("as")?;
-        if self.eof() {
-            self.error("expected a unit expression after 'as'", self.current_span());
+        let start = self.eat_kw("as")?.span.start;
+        // Do not consume the first token of the next statement as a unit.
+        if self.eof() || self.at_statement_boundary() {
+            self.error(
+                "expected a unit expression or '~' after 'as'",
+                self.current_span(),
+            );
             return None;
         }
+        let approximate = self.eat(SyntaxKind::Tilde).is_some();
+        let inferred = approximate
+            && (self.eof()
+                || self.at_statement_boundary()
+                || self.current_is_expression_follow_keyword()
+                || self.at_process_signature()
+                || matches!(
+                    self.current_kind(),
+                    Some(
+                        SyntaxKind::RBrace
+                            | SyntaxKind::RParen
+                            | SyntaxKind::RBracket
+                            | SyntaxKind::Comma
+                            | SyntaxKind::Semicolon
+                    )
+                ));
+        if inferred {
+            return Some(ParsedDisplayUnit {
+                expression: None,
+                text: None,
+                approximate,
+                span: start..self.previous_end(),
+            });
+        }
         let expression = self.parse_type_dimension_expr(0)?;
-        let span = expression.span.clone();
+        let span = start..expression.span.end;
         Some(ParsedDisplayUnit {
-            text: compact_unit_expression(&expression),
-            expression,
+            text: Some(compact_unit_expression(&expression)),
+            expression: Some(expression),
+            approximate,
             span,
         })
     }
@@ -2024,6 +2092,65 @@ mod tests {
     }
 
     #[test]
+    fn calculator_presentation_can_wrap_the_whole_result() {
+        for (source, unit, approximate) in [
+            ("(2 Hour / 3 as Minute)", Some("Minute"), false),
+            ("(((2 Hour / 3) as ~Hour))", Some("Hour"), true),
+            ("(2 Hour / 3 as ~)", None, true),
+            ("(\n2 Hour / 3\nas ~Hour\n)", Some("Hour"), true),
+            ("(2 Hour / 3 as (Minute)) # result", Some("Minute"), false),
+        ] {
+            let parsed = parse_display_expression(source).unwrap();
+            assert_eq!(parsed.expression.display(), "(2 Hour / 3)", "{source}");
+            assert_eq!(parsed.display_unit.as_deref(), unit, "{source}");
+            assert_eq!(parsed.approximate, approximate, "{source}");
+            assert!(parse_expression(source).is_ok(), "{source}");
+        }
+        for source in [
+            "(2 Hour as Minute",
+            "2 Hour as Minute)",
+            "(2 Hour as)",
+            "(2 Hour as ~~Hour)",
+        ] {
+            assert!(parse_display_expression(source).is_err(), "{source}");
+        }
+        let parsed = parse_display_expression("((missing as Hour))").unwrap();
+        assert_eq!(parsed.expression.span, 2..9);
+        let errors = parse_display_expression("((2 Hour as ~~Hour))").unwrap_err();
+        assert_eq!(errors[0].span, 13..14);
+    }
+
+    #[test]
+    fn parses_approximate_presentation_with_optional_units() {
+        for (source, unit) in [
+            ("1 Hour as ~", None),
+            ("1 Hour as ~Minute", Some("Minute")),
+            ("1 Hour as ~ (Mile / Hour)", Some("Mile / Hour")),
+        ] {
+            let parsed = parse_display_expression(source).unwrap();
+            assert!(parsed.approximate);
+            assert_eq!(parsed.display_unit.as_deref(), unit);
+        }
+        for source in [
+            "1 Hour as",
+            "1 Hour as\n~Hour",
+            "1 Hour as ~\nMinute",
+            "1 Hour as ~~Hour",
+        ] {
+            assert!(parse_display_expression(source).is_err(), "{source}");
+        }
+        assert!(parse_expression("1 Hour as ~").is_ok());
+        let parsed =
+            parse("process P { monitor value: Scalar as ~ export other: Scalar aggregate sum }");
+        assert!(parsed.errors.is_empty(), "{:?}", parsed.errors);
+        let Item::Process(process) = &parsed.module.items[0] else {
+            panic!("expected process");
+        };
+        assert!(process.monitors[0].approximate);
+        assert!(process.monitors[0].display_unit.is_none());
+    }
+
+    #[test]
     fn parses_monitor_display_units() {
         let parsed = parse(
             "process CostAccounting { export cost: USD aggregate sum }\n\
@@ -2071,8 +2198,7 @@ mod tests {
 
     #[test]
     fn parses_open_process_invocation_signatures() {
-        let parsed =
-            parse("process Dispatch { (jobs: Integer, copies_per_job: Integer) }\n");
+        let parsed = parse("process Dispatch { (jobs: Integer, copies_per_job: Integer) }\n");
         assert!(parsed.errors.is_empty(), "{:#?}", parsed.errors);
         let Item::Process(process) = &parsed.module.items[0] else {
             panic!("expected process");

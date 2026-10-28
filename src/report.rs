@@ -76,7 +76,10 @@ pub struct MetricBounds {
 pub struct MonitoredMetric {
     pub path: String,
     pub ty: String,
+    /// Exact value, retained even when decimal presentation is requested.
     pub value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub approximate_value: Option<String>,
     /// The process instance's own contribution before child aggregation.
     /// Absence means the process contributes no local value.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -93,6 +96,12 @@ pub struct MonitoredMetric {
     pub span: SourceSpan,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub dependencies: Vec<String>,
+}
+
+impl MonitoredMetric {
+    pub fn display_value(&self) -> &str {
+        self.approximate_value.as_deref().unwrap_or(&self.value)
+    }
 }
 
 /// A conservative temporal reading of a monitored, time-valued makespan.

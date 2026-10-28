@@ -253,13 +253,13 @@ h2 {{ margin:0 0 12px; font-size:15px }} h3 {{ margin:26px 0 9px; font-size:11px
     const rational=/^(-?\d+)\/(\d+)(\s+.*)?$/.exec(text);if(!rational)return text;
     try{{const numerator=BigInt(rational[1]),denominator=BigInt(rational[2]);if(denominator===0n)return text;const negative=numerator<0n,magnitude=negative?-numerator:numerator,whole=magnitude/denominator,scaled=(magnitude%denominator)*1000n/denominator;const fraction=scaled.toString().padStart(3,'0').replace(/0+$/,'');const sign=negative&&(whole!==0n||scaled!==0n)?'-':'';return sign+whole.toString()+(fraction?'.'+fraction:'')+(rational[3]||'')}}catch(_error){{return text}}
   }};
-  const quantityParts = value => {{const match=/^(\S+)(?:\s+(.+))?$/.exec(str(value));return match?{{number:truncateMonitoredText(match[1]),unit:match[2]||''}}:{{number:truncateMonitoredText(value),unit:''}}}};
+  const quantityParts = (value,preserve=false) => {{const match=/^(\S+)(?:\s+(.+))?$/.exec(str(value));return match?{{number:preserve?match[1]:truncateMonitoredText(match[1]),unit:match[2]||''}}:{{number:truncateMonitoredText(value),unit:''}}}};
   const isConcreteMetricValue = value => /^(?:true|false|-?(?:\d+(?:\.\d+)?|\d+\/\d+)(?:\s+.+)?)$/.test(str(value).trim());
   const metricBoundValue = metric => {{const bounds=metric&&metric.bounds;if(!bounds)return'';const lower=quantityParts(bounds.lower),upper=quantityParts(bounds.upper);return lower.unit===upper.unit?`${{lower.number}}–${{upper.number}}${{lower.unit?' '+lower.unit:''}}`:`${{lower.number}}${{lower.unit?' '+lower.unit:''}}–${{upper.number}}${{upper.unit?' '+upper.unit:''}}`}};
   const temporalForMetric = metric => temporalMetrics.get(str(metric&&metric.path));
   const temporalRangeValue = temporal => {{const known=temporal&&temporal.known_work;if(!known)return'';const lower=quantityParts(known.lower),upper=quantityParts(known.upper);return lower.unit===upper.unit?`${{lower.number}}–${{upper.number}}${{lower.unit?' '+lower.unit:''}}`:`${{lower.number}}${{lower.unit?' '+lower.unit:''}}–${{upper.number}}${{upper.unit?' '+upper.unit:''}}`}};
   const metricPresentation = metric => {{
-    const temporal=temporalForMetric(metric),bounded=metric&&metric.bounds&&isConcreteMetricValue(metric.bounds.lower)&&isConcreteMetricValue(metric.bounds.upper);if(!temporal){{const value=bounded?metricBoundValue(metric):truncateMonitoredText(metric&&metric.value);return {{value,reason:metric&&metric.bounds&&metric.bounds.reason,knownWork:false,incomplete:false,symbolic:!bounded&&!isConcreteMetricValue(metric&&metric.value)}}}}
+    const temporal=temporalForMetric(metric),bounded=metric&&metric.bounds&&isConcreteMetricValue(metric.bounds.lower)&&isConcreteMetricValue(metric.bounds.upper);if(metric&&metric.approximate_value!=null&&!bounded&&(!temporal||str(temporal.status)!=='incomplete'))return {{value:metric.approximate_value,decimal:true,knownWork:false,incomplete:false,symbolic:false}};if(!temporal){{const value=bounded?metricBoundValue(metric):truncateMonitoredText(metric&&metric.value);return {{value,reason:metric&&metric.bounds&&metric.bounds.reason,knownWork:false,incomplete:false,symbolic:!bounded&&!isConcreteMetricValue(metric&&metric.value)}}}}
     const incomplete=str(temporal.status)==='incomplete',knownWork=temporalRangeValue(temporal)||truncateMonitoredText(metric&&metric.value);
     const concreteKnown=temporal&&temporal.known_work&&isConcreteMetricValue(temporal.known_work.lower)&&isConcreteMetricValue(temporal.known_work.upper);
     if(incomplete){{const count=arr(temporal.obligations).length;return {{value:knownWork,reason:`known work only · successful completion has ${{count}} open duration obligation${{count===1?'':'s'}}`,knownWork:true,incomplete:true,symbolic:!concreteKnown}}}}
@@ -267,7 +267,7 @@ h2 {{ margin:0 0 12px; font-size:15px }} h3 {{ margin:26px 0 9px; font-size:11px
   }};
   const monitoredValue = metric => metricPresentation(metric).value;
   const metricScales = metric => {{
-    const match=/^(-?\d+)(?:\s+(.+))?$/.exec(str(metric&&metric.value));if(!match)return[];const digits=match[1],unit=match[2]||'';
+    if(metric&&metric.approximate_value!=null)return[];const match=/^(-?\d+)(?:\s+(.+))?$/.exec(str(metric&&metric.value));if(!match)return[];const digits=match[1],unit=match[2]||'';
     return [[24,'Y'],[21,'Z'],[18,'E'],[15,'P'],[12,'T'],[9,'G']].filter(([exponent])=>digits.replace('-','').length>exponent).map(([exponent,prefix])=>truncateMonitoredText(scaledInteger(digits,exponent)+' '+prefix+unit));
   }};
   const svgEl = (name, attrs={{}}) => {{ const el=document.createElementNS(NS,name); for(const [k,v] of Object.entries(attrs)) el.setAttribute(k,v); return el; }};
@@ -564,7 +564,7 @@ h2 {{ margin:0 0 12px; font-size:15px }} h3 {{ margin:26px 0 9px; font-size:11px
   function selectNode(node, element) {{ selected=node;document.querySelectorAll('.node.selected').forEach(x=>x.classList.remove('selected'));element.classList.add('selected');renderDetails(); }}
   function appendMetricReading(root,presentation) {{
     if(presentation.symbolic){{const unavailable=document.createElement('div');unavailable.className='metric-uncomputed';unavailable.textContent='Not yet computable';root.append(unavailable);return}}
-    const reading=document.createElement('div');reading.className='metric-reading';const parts=quantityParts(presentation.value);const number=document.createElement('span');number.className='metric-number';number.textContent=parts.number;reading.append(number);if(parts.unit){{const unit=document.createElement('span');unit.className='metric-unit';unit.textContent=parts.unit;reading.append(unit)}}root.append(reading);
+    const reading=document.createElement('div');reading.className='metric-reading';const parts=quantityParts(presentation.value,presentation.decimal);const number=document.createElement('span');number.className='metric-number';number.textContent=parts.number;reading.append(number);if(parts.unit){{const unit=document.createElement('span');unit.className='metric-unit';unit.textContent=parts.unit;reading.append(unit)}}root.append(reading);
   }}
   function appendMetricDependencies(root,metric,presentation) {{
     if(!presentation.symbolic)return;const dependencies=[...new Set(arr(metric&&metric.dependencies).map(str).filter(Boolean))];const label=document.createElement('div');label.className='metric-dependency-label';label.textContent=dependencies.length?'Depends on:':'Depends on unresolved input';root.append(label);if(!dependencies.length)return;const list=document.createElement('ul');list.className='metric-dependencies';for(const dependency of dependencies.slice(0,5)){{const item=document.createElement('li');item.textContent=dependency;list.append(item)}}if(dependencies.length>5){{const item=document.createElement('li');item.textContent=`+${{dependencies.length-5}} more`;list.append(item)}}root.append(list);
@@ -822,7 +822,7 @@ mod tests {
         assert!(html.contains("const truncateMonitoredText"));
         assert!(html.contains("fraction.slice(0,3)"));
         assert!(html.contains("const monitoredValue"));
-        assert!(html.contains("quantityParts(presentation.value)"));
+        assert!(html.contains("quantityParts(presentation.value,presentation.decimal)"));
         assert!(html.contains("number.textContent=parts.number"));
         assert!(html.contains("scales[0]||presentation.value"));
         assert!(html.contains("const metricPresentation"));

@@ -260,6 +260,8 @@ pub struct Monitor {
     pub name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub display_unit: Option<String>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub approximate: bool,
     /// Parsed form of the presentation unit. Reports retain the compact source
     /// spelling above, while analysis uses this expression to resolve compound
     /// units such as `Millimeter^2` and `Mile / Hour` exactly.
@@ -517,6 +519,12 @@ pub struct Expr {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ExprKind {
+    /// An exact value with a compatible display unit and optional decimal output.
+    Presentation {
+        value: Box<Expr>,
+        unit: Option<Box<Expr>>,
+        approximate: bool,
+    },
     Name {
         value: String,
     },
@@ -628,6 +636,17 @@ impl Expr {
 
     pub fn display(&self) -> String {
         match &self.kind {
+            ExprKind::Presentation {
+                value,
+                unit,
+                approximate,
+            } => format!(
+                "({} as {}{})",
+                value.display(),
+                if *approximate { "~" } else { "" },
+                unit.as_ref()
+                    .map_or_else(String::new, |unit| unit.display())
+            ),
             ExprKind::Name { value } => value.clone(),
             ExprKind::Number { value, suffix } => match suffix {
                 Some(suffix) => format!("{value} {suffix}"),

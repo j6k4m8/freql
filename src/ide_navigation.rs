@@ -226,7 +226,7 @@ impl AnalysisSnapshot {
                 "\n\n**`{}`** (entry `{}`): `{}`",
                 self.compilation.display_text(&metric.path),
                 self.compilation.report.entry,
-                self.compilation.display_text(&metric.value)
+                self.compilation.display_text(metric.display_value())
             ));
             if !metric.dependencies.is_empty() {
                 markdown.push_str("\n\nUnresolved dependencies:");
@@ -1145,6 +1145,12 @@ impl<'a> Navigation<'a> {
                 self.expr(source, scope, left, false);
                 self.expr(source, scope, right, false);
                 None
+            }
+            ExprKind::Presentation { value, unit, .. } => {
+                if let Some(unit) = unit {
+                    self.expr(source, &HashMap::new(), unit, false);
+                }
+                self.expr(source, scope, value, false)
             }
             ExprKind::Unary { value, .. } => self.expr(source, scope, value, false),
             ExprKind::Array { items } => {

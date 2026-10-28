@@ -12,6 +12,7 @@ pub mod lexer;
 pub mod lsp;
 mod namespaces;
 pub mod parser;
+mod presentation;
 pub mod render;
 pub mod report;
 pub mod server;
