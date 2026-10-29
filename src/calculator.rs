@@ -94,7 +94,7 @@ impl CalculatorSession {
         names.into_iter().collect()
     }
 
-    /// Accept an ordinary freql `import`, `unit`, or `let`, or evaluate a numeric
+    /// Accept an ordinary freql `import`, `unit`, or `let`, or evaluate a numeric or boolean
     /// expression. A trailing `as Unit` selects presentation without changing
     /// the expression's structural type or exact value.
     ///
@@ -170,6 +170,25 @@ impl CalculatorSession {
             return Err(CalculatorError::Invalid(
                 "expression has an unresolved type".into(),
             ));
+        }
+
+        if inferred == Type::Bool {
+            if display_unit.is_some() || approximate {
+                return Err(CalculatorError::Invalid(
+                    "boolean results cannot use numeric presentation (`as Unit` or `as ~`)".into(),
+                ));
+            }
+            return probe_compilation
+                .model
+                .processes
+                .get(SESSION_PROCESS)
+                .and_then(|process| process.boolean_bindings.get(RESULT_BINDING))
+                .map(|value| Some(value.to_string()))
+                .ok_or_else(|| {
+                    CalculatorError::Invalid(
+                        "boolean expression cannot be resolved statically".into(),
+                    )
+                });
         }
 
         // The probe's inferred display can contain concrete composite units
