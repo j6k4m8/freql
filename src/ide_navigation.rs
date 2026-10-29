@@ -370,6 +370,7 @@ fn valid_identifier(name: &str) -> bool {
             "monitor",
             "aggregate",
             "let",
+            "const",
             "var",
             "requires",
             "for",
@@ -920,7 +921,7 @@ impl<'a> Navigation<'a> {
                     }
                     let detail = format!(
                         "{} {name}: {}",
-                        if *mutable { "var" } else { "let" },
+                        if *mutable { "let" } else { "const" },
                         ty.as_ref()
                             .map(ToString::to_string)
                             .or_else(|| inferred.as_ref().map(ToString::to_string))

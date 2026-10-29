@@ -25,7 +25,7 @@ pub enum CalculatorError {
     Compile(#[from] crate::analyzer::CompileError),
 }
 
-/// A persistent calculator scope containing imports and immutable `let`
+/// A persistent calculator scope containing imports, mutable `let`, and `const`
 /// bindings. Every input is checked with the ordinary compiler before it is
 /// committed, so calculator and `.req` semantics cannot drift apart.
 #[derive(Clone, Debug)]
@@ -34,6 +34,7 @@ pub struct CalculatorSession {
     imports: Vec<String>,
     units: Vec<String>,
     bindings: Vec<String>,
+    warnings: Vec<String>,
 }
 
 impl CalculatorSession {
@@ -44,6 +45,7 @@ impl CalculatorSession {
             imports: Vec::new(),
             units: Vec::new(),
             bindings: Vec::new(),
+            warnings: Vec::new(),
         }
     }
 
@@ -63,10 +65,16 @@ impl CalculatorSession {
         &self.bindings
     }
 
+    /// Warnings from the most recent input, cleared before the next input.
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
     pub fn clear(&mut self) {
         self.imports.clear();
         self.units.clear();
         self.bindings.clear();
+        self.warnings.clear();
     }
 
     /// Names suitable for interactive completion in the current scope.
@@ -101,6 +109,7 @@ impl CalculatorSession {
     /// Successful declarations return `None`; successful expressions return
     /// their exact, unit-normalized display value.
     pub fn execute(&mut self, input: &str) -> Result<Option<String>, CalculatorError> {
+        self.warnings.clear();
         let input = input.trim().trim_end_matches(';').trim();
         if input.is_empty() || input.starts_with('#') {
             return Ok(None);
@@ -119,10 +128,28 @@ impl CalculatorSession {
             self.units = units;
             return Ok(None);
         }
-        if starts_with_keyword(input, "let") {
+        if starts_with_keyword(input, "let")
+            || starts_with_keyword(input, "const")
+            || is_assignment(input)
+        {
             let mut bindings = self.bindings.clone();
             bindings.push(input.to_owned());
-            self.validate_scope(&self.imports, &self.units, &bindings)?;
+            let prefix = build_source(&self.imports, &self.units, &self.bindings, None, None);
+            let input_start = prefix.len() - "    }\n}\n".len();
+            let source = build_source(&self.imports, &self.units, &bindings, None, None);
+            let compilation = self.compile(&source)?;
+            ensure_valid(&compilation)?;
+            self.warnings = compilation
+                .report
+                .diagnostics
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.severity == Severity::Warning
+                        && diagnostic.span.path == "<calculator>"
+                        && diagnostic.span.start >= input_start
+                })
+                .map(|diagnostic| format!("warning[{}]: {}", diagnostic.code, diagnostic.message))
+                .collect();
             self.bindings = bindings;
             return Ok(None);
         }
@@ -273,6 +300,18 @@ fn neutral_type_display(ty: &Type, compilation: &Compilation) -> Option<String> 
         // every factor after the first. Pressure and voltage both have
         // two-factor denominators, so this is not a corner case.
         format!("{numerator} / ({})", denominator.join(" * "))
+    })
+}
+
+/// Lexing distinguishes assignments from equality and from '=' inside strings
+/// or comments. The full compiler still validates the statement and target.
+fn is_assignment(input: &str) -> bool {
+    use crate::syntax::SyntaxKind as K;
+    crate::lexer::lex(input).tokens.iter().any(|token| {
+        matches!(
+            token.kind,
+            K::Eq | K::PlusEq | K::MinusEq | K::StarEq | K::SlashEq | K::CaretEq
+        )
     })
 }
 
