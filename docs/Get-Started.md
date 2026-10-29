@@ -493,6 +493,12 @@ presentation of derived results and never rounds an intermediate calculation.
 An explicit monitor unit or final `as Unit` chooses the final display unit;
 otherwise compatible unit choices compose through the expression.
 
+Comparisons and logical expressions produce `true` or `false` in the calculator,
+using the same dimensional checks as ordinary `.req` code. For example,
+`1 Mile == Mile` and `1 Hour == 60 Minute` both return `true`; comparing length to
+time is invalid. Numeric presentation clauses (`as Unit` and `as ~`) do not apply
+to booleans.
+
 The session uses ordinary language parsing, typing, units, and exact presentation conversion. Quoted imports resolve from the calculator root. `:bindings`, `:clear`, `:help`, and `:quit` manage the session. Up/down browse history, Ctrl-R searches it, and Tab completes commands, bindings, declarations, units, and `.req` import paths. Interactive input supports syntax highlighting; piped input omits prompts and terminal formatting.
 
 ## CLI, reports, formatting, and browser views

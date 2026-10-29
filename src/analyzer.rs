@@ -131,6 +131,10 @@ pub struct ProcessModel {
     /// Names and inferred types visible in the process body after elaboration.
     /// This is a query surface for IDE features, not a stable HIR representation.
     pub bindings: IndexMap<String, Type>,
+    /// Statically resolved boolean locals, reused by the calculator. Kept out
+    /// of serialized reports because this is an internal evaluation query.
+    #[serde(skip)]
+    pub(crate) boolean_bindings: IndexMap<String, bool>,
     pub binding_declarations: IndexMap<String, usize>,
     pub bodyless: bool,
     pub composite: bool,
@@ -3066,6 +3070,7 @@ impl Analyzer {
                     default_config_sources: IndexMap::new(),
                     default_configured_arguments: IndexMap::new(),
                     bindings: IndexMap::new(),
+                    boolean_bindings: IndexMap::new(),
                     binding_declarations: IndexMap::new(),
                     bodyless: process.body.is_none(),
                     composite: false,
@@ -4101,8 +4106,20 @@ impl Analyzer {
         self.validate_process_graph(&item, &process, &members, &mut environment, &mut summary);
         self.finish_exports(&item, &process, &members, &mut summary);
         self.record_consumed_inputs(&item, &process, &members, &summary);
+        let boolean_bindings = environment
+            .values
+            .iter()
+            .filter(|(_, ty)| **ty == Type::Bool)
+            .filter_map(|(name, _)| {
+                let expression = environment.expressions.get(name)?;
+                let value =
+                    self.evaluate_predicate(&normalize_expr(expression, &environment.expressions))?;
+                Some((name.clone(), value))
+            })
+            .collect();
         if let Some(model) = self.model.processes.get_mut(&process.name) {
             model.bindings = environment.values.clone();
+            model.boolean_bindings = boolean_bindings;
             model.binding_declarations = environment.declarations.clone();
         }
         self.publish_process_model(&process, &summary);
@@ -12777,6 +12794,18 @@ impl Analyzer {
                 })
             }
             ExprKind::Binary { op, left, right } if op.is_comparison() => {
+                if matches!(op, BinaryOp::Eq | BinaryOp::NotEq)
+                    && let (Some(left), Some(right)) = (
+                        self.evaluate_predicate(left),
+                        self.evaluate_predicate(right),
+                    )
+                {
+                    return Some(if *op == BinaryOp::Eq {
+                        left == right
+                    } else {
+                        left != right
+                    });
+                }
                 let (left_value, left_dimension) = self.constant_quantity(left)?;
                 let (right_value, right_dimension) = self.constant_quantity(right)?;
                 if left_dimension != right_dimension {
