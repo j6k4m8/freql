@@ -43,7 +43,27 @@ let total = result
 
 An opening `(` or `[` on the next line begins a new statement. Keep a call's opening delimiter on the same line as its callee, including chained configuration and invocation: `Verifier(config)(inputs)`. Comments and blank lines retain these layout rules. `else` still attaches to its `if` across a newline.
 
-Use `let name = value` for immutable locals and `let mut name = value` for mutable locals. There is no `var` declaration. `#` introduces a line comment, and triple-quoted strings document declarations.
+Use `let name = value` for mutable locals and `const name = value` for bindings
+that cannot be reassigned or redeclared. Repeating a local `let` declaration is
+allowed with warning `W0601`; its initializer reads the previous binding before
+replacing it. `let mut` remains a supported alias for `let`. Parameters, process
+members, owned values, and process/run graph identities cannot be redeclared as
+locals. Process/run identities also remain fixed after declaration.
+
+```req
+let count = 1
+count = 2
+let count = count + 1 # warning: redeclaration
+count += 3
+const limit = 10
+```
+
+Compound assignments `+=`, `-=`, `*=`, `/=`, and `^=` use the same arithmetic,
+dimensional, ownership, and assignment checks as their expanded forms. For
+example, `count += 2` means `count = count + 2`. Reassignment preserves the
+binding's type; use a new `let` declaration to replace a local with a different
+type. Constants reject plain and compound reassignment. There is no `var`
+declaration. `#` introduces a line comment, and triple-quoted strings document declarations.
 
 Quantities, `Integer`, `Scalar`, `Bool`, and `String` are copyable. Strings use double quotes and support `\n`, `\r`, `\t`, `\0`, `\"`, and `\\`. They support equality and inequality but are incompatible with numeric quantities.
 

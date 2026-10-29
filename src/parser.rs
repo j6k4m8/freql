@@ -197,6 +197,7 @@ const EXPRESSION_FOLLOW_KEYWORDS: &[&str] = &[
     // Statement and declaration starters, which appear after an expression in
     // single-line bodies such as `config a: Integer = 1 export b: USD`.
     "let",
+    "const",
     "mut",
     "requires",
     "for",
@@ -1053,8 +1054,11 @@ impl<'a> Parser<'a> {
 
     fn parse_stmt(&mut self) -> Option<Stmt> {
         let start = self.current_span().start;
-        if self.eat_kw("let").is_some() {
-            let mutable = self.eat_kw("mut").is_some();
+        if self.at_kw("let") || self.at_kw("const") {
+            let mutable = self.bump()?.text == "let";
+            if mutable {
+                self.eat_kw("mut"); // Backward-compatible spelling of mutable `let`.
+            }
             let name = self.expect_ident()?.text;
             let ty = if self.eat(SyntaxKind::Colon).is_some() {
                 self.parse_type()
@@ -1153,8 +1157,31 @@ impl<'a> Parser<'a> {
                 span: start..self.previous_end(),
             });
         }
-        if self.eat(SyntaxKind::Eq).is_some() {
-            let value = self.parse_expr(0)?;
+        let compound = match self.current_kind() {
+            Some(SyntaxKind::PlusEq) => Some(BinaryOp::Add),
+            Some(SyntaxKind::MinusEq) => Some(BinaryOp::Sub),
+            Some(SyntaxKind::StarEq) => Some(BinaryOp::Mul),
+            Some(SyntaxKind::SlashEq) => Some(BinaryOp::Div),
+            Some(SyntaxKind::CaretEq) => Some(BinaryOp::Pow),
+            _ => None,
+        };
+        if compound.is_some() || self.at(SyntaxKind::Eq) {
+            self.bump();
+            let right = self.parse_expr(0)?;
+            // Assignment places are statically checked paths and indices;
+            // compound forms share ordinary arithmetic and mutation checks.
+            let value = if let Some(op) = compound {
+                Expr {
+                    span: left.span.start..right.span.end,
+                    kind: ExprKind::Binary {
+                        op,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right),
+                    },
+                }
+            } else {
+                right
+            };
             return Some(Stmt::Assign {
                 target: left,
                 value,
@@ -2355,7 +2382,7 @@ mod tests {
     }
 
     #[test]
-    fn let_mut_is_the_only_mutable_binding_syntax() {
+    fn let_mut_remains_a_supported_mutable_binding_spelling() {
         let parsed = parse(
             r#"
                 process P {

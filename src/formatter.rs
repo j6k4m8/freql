@@ -282,6 +282,11 @@ fn operator(token: &Token) -> bool {
             | K::Star
             | K::Slash
             | K::Eq
+            | K::PlusEq
+            | K::MinusEq
+            | K::StarEq
+            | K::SlashEq
+            | K::CaretEq
             | K::EqEq
             | K::NotEq
             | K::Lt
@@ -317,8 +322,10 @@ fn space_before(tokens: &[&Token], index: usize) -> bool {
     if matches!(
         b.kind,
         K::Comma | K::Colon | K::Dot | K::RParen | K::RBracket | K::Caret
-    ) || matches!(a.kind, K::Dot | K::LParen | K::LBracket | K::Caret | K::Tilde)
-        || unary(tokens, index - 1)
+    ) || matches!(
+        a.kind,
+        K::Dot | K::LParen | K::LBracket | K::Caret | K::Tilde
+    ) || unary(tokens, index - 1)
     {
         return false;
     }
@@ -485,7 +492,8 @@ mod tests {
 
     #[test]
     fn grouped_unit_suffixes_preserve_meaning_when_formatted() {
-        let source = "process P { config duration:Time=(350/24) Day\nconfig area:Area=(2+1) Meter^2\n}\n";
+        let source =
+            "process P { config duration:Time=(350/24) Day\nconfig area:Area=(2+1) Meter^2\n}\n";
         let formatted = format_source(source).unwrap();
         assert!(formatted.contains("(350 / 24) Day"), "{formatted}");
         assert_eq!(format_source(&formatted).unwrap(), formatted);
@@ -500,7 +508,11 @@ mod tests {
                     visit(&path, checked);
                 } else if path.extension().is_some_and(|e| e == "req") {
                     let source = std::fs::read_to_string(&path).unwrap();
-                    assert!(parse(&source).errors.is_empty(), "{} must parse", path.display());
+                    assert!(
+                        parse(&source).errors.is_empty(),
+                        "{} must parse",
+                        path.display()
+                    );
                     let formatted = format_source(&source)
                         .unwrap_or_else(|e| panic!("{}: {e}", path.display()));
                     assert_eq!(
@@ -518,6 +530,9 @@ mod tests {
         for directory in ["docs/examples", "stdlib"] {
             visit(&root.join(directory), &mut checked);
         }
-        assert!(checked > 0, "no example or standard-library models were checked");
+        assert!(
+            checked > 0,
+            "no example or standard-library models were checked"
+        );
     }
 }
