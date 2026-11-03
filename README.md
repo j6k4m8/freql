@@ -83,6 +83,11 @@ exact; monitors support the same presentation syntax. `as` also works in normal
 code, including bindings and function arguments. Parenthesize a converted operand
 when continuing arithmetic: `(2 Hour as Minute) + 30 Second`.
 
+`let` bindings are mutable; use `const` to prevent reassignment and redeclaration.
+Redeclaring a local `let` emits a warning. Compound assignments `+=`, `-=`, `*=`,
+`/=`, and `^=` work in source code and the calculator, with the same type and
+unit checks as ordinary assignments. `let mut` remains supported.
+
 ## Development checks
 
 From the repository root:

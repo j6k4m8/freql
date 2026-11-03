@@ -371,7 +371,7 @@ fn handle_calculator_line(calculator: &mut CalculatorSession, line: &str) -> boo
         ":quit" | ":q" | "quit" | "exit" => return false,
         ":help" => {
             println!(
-                "import \"units.req\" (Unit, ...)\nunit Name = UnitExpression\nlet name: Type = expression\nexpression as DisplayUnit\n:bindings  show session declarations\n:clear     reset the session\n:quit      exit\n\n↑/↓ browse history · Ctrl-R search history · Tab complete"
+                "import \"units.req\" (Unit, ...)\nunit Name = UnitExpression\nlet name: Type = expression\nconst name: Type = expression\nname = expression (also +=, -=, *=, /=, ^=)\nexpression as DisplayUnit\n:bindings  show session declarations\n:clear     reset the session\n:quit      exit\n\n↑/↓ browse history · Ctrl-R search history · Tab complete"
             );
         }
         ":bindings" => {
@@ -398,11 +398,16 @@ fn handle_calculator_line(calculator: &mut CalculatorSession, line: &str) -> boo
         command if command.starts_with(':') => {
             eprintln!("unknown calculator command {command}; try :help");
         }
-        input => match calculator.execute(input) {
-            Ok(Some(value)) => println!("{value}"),
-            Ok(None) => {}
-            Err(error) => eprintln!("{error}"),
-        },
+        input => {
+            match calculator.execute(input) {
+                Ok(Some(value)) => println!("{value}"),
+                Ok(None) => {}
+                Err(error) => eprintln!("{error}"),
+            }
+            for warning in calculator.warnings() {
+                eprintln!("{warning}");
+            }
+        }
     }
     true
 }
@@ -430,6 +435,7 @@ impl CalculatorHelper {
             [
                 "import",
                 "let",
+                "const",
                 "mut",
                 "as",
                 "true",
@@ -554,7 +560,16 @@ impl Highlighter for CalculatorHelper {
                 freql::syntax::SyntaxKind::Ident
                     if matches!(
                         token.text.as_str(),
-                        "import" | "let" | "mut" | "as" | "true" | "false" | "and" | "or" | "not"
+                        "import"
+                            | "let"
+                            | "const"
+                            | "mut"
+                            | "as"
+                            | "true"
+                            | "false"
+                            | "and"
+                            | "or"
+                            | "not"
                     ) =>
                 {
                     Some("\x1b[1;35m")

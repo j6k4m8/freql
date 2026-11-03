@@ -1737,6 +1737,8 @@ impl Analyzer {
                         annotations.insert(name.clone(), ty.clone());
                     } else if let Some(ty) = self.refinement_expression_type(value, annotations) {
                         annotations.insert(name.clone(), ty);
+                    } else {
+                        annotations.shift_remove(name);
                     }
                 }
                 Stmt::Assign { target, value, .. } => {
@@ -2472,6 +2474,41 @@ impl Analyzer {
         }
     }
 
+    /// Only ordinary mutable locals can be redeclared. Parameters, constants,
+    /// ownership-bearing values and graph identities retain their existing rules.
+    fn check_local_declaration(
+        &mut self,
+        file_key: &str,
+        span: &Span,
+        name: &str,
+        mutable: bool,
+        environment: &TypeEnv,
+    ) -> bool {
+        let Some(previous) = environment.values.get(name) else {
+            return true;
+        };
+        if mutable
+            && environment.declarations.contains_key(name)
+            && environment.mutable.contains(name)
+            && !previous.is_owned()
+            && !matches!(previous, Type::ConfiguredProcess(_) | Type::Run(_))
+        {
+            self.push_warning(
+                file_key,
+                span.clone(),
+                "W0601",
+                format!(
+                    "let binding {name} is redeclared; the new binding replaces the previous one"
+                ),
+            );
+            true
+        } else {
+            self.push_error(file_key, span.clone(), "E0634",
+                format!("cannot redeclare binding {name}; only mutable local let bindings may be redeclared"));
+            false
+        }
+    }
+
     fn validate_pure_block(
         &mut self,
         item: &ItemRef,
@@ -2489,6 +2526,15 @@ impl Analyzer {
                     value,
                     span,
                 } => {
+                    if !self.check_local_declaration(
+                        &item.file_key,
+                        span,
+                        name,
+                        *mutable,
+                        environment,
+                    ) {
+                        continue;
+                    }
                     let inferred = self.infer_expr(&item.file_key, value, environment);
                     let resolved = ty
                         .as_ref()
@@ -2527,6 +2573,7 @@ impl Analyzer {
                         );
                     }
                     environment.values.insert(name.clone(), resolved);
+                    environment.declarations.insert(name.clone(), span.end);
                     if *mutable {
                         environment.mutable.insert(name.clone());
                     }
@@ -2699,7 +2746,7 @@ impl Analyzer {
                             span.clone(),
                             "E0417",
                             format!(
-                                "cannot assign immutable local {name}; declare it with let mut"
+                                "cannot assign immutable binding {name}; use let for mutable locals"
                             ),
                         );
                     } else {
@@ -4234,13 +4281,13 @@ impl Analyzer {
                     value,
                     span,
                 } => {
-                    if environment.values.contains_key(name) {
-                        self.push_error(
-                            &item.file_key,
-                            span.clone(),
-                            "E0634",
-                            format!("local binding {name} shadows an existing visible name"),
-                        );
+                    if !self.check_local_declaration(
+                        &item.file_key,
+                        span,
+                        name,
+                        *mutable,
+                        environment,
+                    ) {
                         continue;
                     }
                     let inferred = self.infer_expr(&item.file_key, value, environment);
@@ -4270,14 +4317,6 @@ impl Analyzer {
                     }
                     let graph_binding =
                         matches!(&resolved, Type::ConfiguredProcess(_) | Type::Run(_));
-                    if *mutable && graph_binding {
-                        self.push_error(
-                            &item.file_key,
-                            span.clone(),
-                            "E0636",
-                            "configured-process and run bindings are graph identities and cannot be mutable",
-                        );
-                    }
 
                     if let Some(configured) = self.classify_configuration(value, environment) {
                         self.validate_configuration(
@@ -4326,6 +4365,8 @@ impl Analyzer {
                         environment
                             .run_dependencies
                             .insert(name.clone(), run_dependencies);
+                    } else {
+                        environment.run_dependencies.shift_remove(name);
                     }
                     if *mutable && !graph_binding {
                         environment.mutable.insert(name.clone());
@@ -5455,7 +5496,7 @@ impl Analyzer {
                     &item.file_key,
                     target.span.clone(),
                     "E0625",
-                    format!("cannot assign immutable local {name}; declare it with let mut"),
+                    format!("cannot assign immutable binding {name}; use let for mutable locals"),
                 );
                 return;
             }
@@ -21481,7 +21522,7 @@ process Root {
                 process ImmutableAccumulator {
                     gets input: Item
                     () => {
-                        let collected: Item[] = []
+                        const collected: Item[] = []
                         collected.append(input)
                         collected = []
                     }
@@ -21988,7 +22029,8 @@ process Root {
             r#"
                 process Child {}
                 process Parent {
-                    () => { let mut child = Child() }
+                    () => { let child = Child()
+child = Child() }
                 }
             "#,
         );
@@ -21997,7 +22039,7 @@ process Root {
                 .report
                 .diagnostics
                 .iter()
-                .any(|diagnostic| diagnostic.code == "E0636"),
+                .any(|diagnostic| diagnostic.code == "E0625"),
             "{}",
             mutable_graph_binding.render_human()
         );

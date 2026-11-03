@@ -67,6 +67,16 @@ enum RawKind {
     Ge,
     #[token("=")]
     Eq,
+    #[token("+=")]
+    PlusEq,
+    #[token("-=")]
+    MinusEq,
+    #[token("*=")]
+    StarEq,
+    #[token("/=")]
+    SlashEq,
+    #[token("^=")]
+    CaretEq,
     #[token("<")]
     Lt,
     #[token(">")]
@@ -112,6 +122,11 @@ impl From<RawKind> for SyntaxKind {
             RawKind::Slash => Self::Slash,
             RawKind::Caret => Self::Caret,
             RawKind::Eq => Self::Eq,
+            RawKind::PlusEq => Self::PlusEq,
+            RawKind::MinusEq => Self::MinusEq,
+            RawKind::StarEq => Self::StarEq,
+            RawKind::SlashEq => Self::SlashEq,
+            RawKind::CaretEq => Self::CaretEq,
             RawKind::EqEq => Self::EqEq,
             RawKind::NotEq => Self::NotEq,
             RawKind::Lt => Self::Lt,

@@ -119,7 +119,7 @@
           }
         },
         {
-          "match": "\\b(let)(?:\\s+(mut))?\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "match": "\\b(let|const)(?:\\s+(mut))?\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": { "name": "storage.type.variable.freql" },
             "2": { "name": "storage.modifier.freql" },
@@ -160,7 +160,7 @@
         { "name": "keyword.control.loop.freql", "match": "\\b(?:for|in|repeat)\\b" },
         { "name": "keyword.control.freql", "match": "\\b(?:requires|yield|before|where|monitor|aggregate|as|base)\\b" },
         { "name": "storage.type.freql", "match": "\\b(?:artifact|resource|process|unit|fn|trait|impl)\\b" },
-        { "name": "storage.modifier.freql", "match": "\\b(?:config|expose|gets|uses|export|let|mut)\\b" },
+        { "name": "storage.modifier.freql", "match": "\\b(?:config|expose|gets|uses|export|let|const|mut)\\b" },
         { "name": "constant.language.boolean.freql", "match": "\\b(?:true|false)\\b" },
         { "name": "support.function.aggregate.freql", "match": "\\b(?:sum|makespan|max|min|explicit)\\b" }
       ]
@@ -186,7 +186,7 @@
       "patterns": [
         { "name": "keyword.operator.arrow.freql", "match": "->|=>" },
         { "name": "keyword.operator.comparison.freql", "match": "==|!=|<=|>=|<|>" },
-        { "name": "keyword.operator.assignment.freql", "match": "=" },
+        { "name": "keyword.operator.assignment.freql", "match": "\\+=|-=|\\*=|/=|\\^=|=" },
         { "name": "keyword.operator.arithmetic.freql", "match": "\\+|-|\\*|/|\\^|~" },
         { "name": "keyword.operator.logical.freql", "match": "!" }
       ]
